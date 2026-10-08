@@ -79,7 +79,8 @@ function renderCal(list) {
 }
 
 // Map
-let map, cluster, markers = {};
+let map, cluster;
+const popupHtml = d => `<div class="pop"><div class="t">${esc(d.t)}</div><div class="m">${esc(when(d))}${d.h ? ` · ${esc(d.h)}` : ''}</div><div class="m">${esc(place(d))}</div><div>${links(d)}<a href="${directions(d)}" target="_blank" rel="noopener">Directions</a></div></div>`;
 function initMap() {
   if (map) return true;
   if (!window.L) { $('map').innerHTML = '<p class="map-error">The map library could not load. Check your connection, or use the List view.</p>'; return false; }
@@ -96,13 +97,14 @@ function initMap() {
 }
 function renderMap(list) {
   if (!initMap()) return;
-  cluster.clearLayers(); markers = {};
+  map.closePopup();
+  cluster.clearLayers();
   for (const d of list) {
     if (!d.ll) continue;
     const icon = L.divIcon({ className: '', html: `<div class="mk" style="width:16px;height:16px;background:${colorOf(d)}"></div>`, iconSize: [16, 16], iconAnchor: [8, 8] });
-    const marker = L.marker(d.ll, { icon, title: d.t, alt: d.t }).bindPopup(`<div class="pop"><div class="t">${esc(d.t)}</div><div class="m">${esc(when(d))}${d.h ? ` · ${esc(d.h)}` : ''}</div><div class="m">${esc(place(d))}</div><div>${links(d)}<a href="${directions(d)}" target="_blank" rel="noopener">Directions</a></div></div>`, { maxWidth: 300 });
+    const marker = L.marker(d.ll, { icon, title: d.t, alt: d.t }).bindPopup(popupHtml(d), { maxWidth: 300 });
     marker.on('click', () => { state.sel = d.i; renderSide(); });
-    markers[d.i] = marker; cluster.addLayer(marker);
+    cluster.addLayer(marker);
   }
   setTimeout(() => { map.invalidateSize(); renderSide(); }, 0);
 }
@@ -115,11 +117,15 @@ function renderSide() {
     <div class="m">${esc(when(d))}${d.n ? ` · ${esc(d.n)}` : ''}</div><div class="m">${esc(place(d))}</div></button>`).join('') || '<p class="empty">No events in this part of the map. Zoom out or change filters.</p>';
   $('side').querySelectorAll('.card').forEach(card => card.onclick = () => focusMarker(+card.dataset.i));
 }
+// Open the popup at the event's location rather than on its marker: events that
+// share a building stay clustered even at max zoom, so the marker may not exist.
 function focusMarker(i) {
-  const marker = markers[i];
-  if (!marker) return;
+  const d = DATA[i];
+  if (!map || !d?.ll) return;
   state.sel = i;
-  cluster.zoomToShowLayer(marker, () => marker.openPopup());
+  map.closePopup();
+  map.setView(d.ll, map.getMaxZoom(), { animate: false });
+  L.popup({ maxWidth: 300, offset: [0, -6] }).setLatLng(d.ll).setContent(popupHtml(d)).openOn(map);
   renderSide();
 }
 
