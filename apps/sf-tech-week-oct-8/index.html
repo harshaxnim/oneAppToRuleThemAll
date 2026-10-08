@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="description" content="Every Thursday SF Tech Week event with a public address, on a day timeline and a map." />
+    <title>SF Tech Week · Oct 8</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="title-row">
+        <a class="back" href="../../" aria-label="All apps">&larr; Apps</a>
+        <h1>SF Tech Week <span>Thursday, Oct 8</span></h1>
+      </div>
+      <p class="stats" id="stats"></p>
+      <div class="controls">
+        <div class="tabs" id="tabs" role="tablist" aria-label="View">
+          <button type="button" role="tab" data-v="cal" aria-selected="true">Calendar</button>
+          <button type="button" role="tab" data-v="mapv" aria-selected="false">Map</button>
+          <button type="button" role="tab" data-v="list" aria-selected="false">List</button>
+        </div>
+        <input type="search" id="q" placeholder="Search title, host, venue" aria-label="Search events" />
+        <div class="seg" id="tod" role="group" aria-label="Time of day">
+          <button type="button" data-t="all" aria-pressed="true">All</button>
+          <button type="button" data-t="m" aria-pressed="false">Morning</button>
+          <button type="button" data-t="a" aria-pressed="false">Afternoon</button>
+          <button type="button" data-t="e" aria-pressed="false">Evening</button>
+          <button type="button" data-t="up" aria-pressed="false">Upcoming</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="showHidden" /> Include events without a public address</label>
+        <label class="chk"><input type="checkbox" id="openOnly" /> RSVPs open only</label>
+        <span class="count" id="count" role="status" aria-live="polite"></span>
+      </div>
+    </header>
+    <main>
+      <section class="view on" id="cal" aria-label="Calendar"></section>
+      <section class="view" id="mapv" aria-label="Map">
+        <div id="map"></div>
+        <aside><h2 id="asideh">In view</h2><div id="side"></div></aside>
+      </section>
+      <section class="view" id="list" aria-label="List"></section>
+    </main>
+    <div id="detail" role="dialog" aria-label="Event details" hidden>
+      <button class="x" type="button" aria-label="Close details">&times;</button>
+      <div id="dbody"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
