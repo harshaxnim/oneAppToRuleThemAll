@@ -8,11 +8,13 @@ import { firebaseConfig } from '../config/firebase-config.js';
 test('template registers hosted apps; copied repositories register their own root instead of copying the Learning Tracker identity', () => {
   const primary = resolveAppInfo({ repository: 'harshaxnim/websiteSetup' });
   const apps = resolveCatalogueApps(primary, HOSTED_APPS);
-  assert.equal(apps.length, 2); assert.equal(apps[0].appId, 'learning-tracker');
+  assert.equal(apps.length, 3); assert.equal(apps[0].appId, 'learning-tracker');
   assert.equal(apps[0].url, 'https://harshaxnim.github.io/websiteSetup/learning-tracker/');
   assert.equal(apps[1].appId, 'sf-tech-week-oct-8');
   assert.equal(apps[1].url, 'https://harshaxnim.github.io/websiteSetup/apps/sf-tech-week-oct-8/');
   assert.equal(apps[1].iconUrl, 'https://harshaxnim.github.io/websiteSetup/apps/sf-tech-week-oct-8/icon.svg');
+  assert.equal(apps[2].appId, 'blockplan');
+  assert.equal(apps[2].url, 'https://harshaxnim.github.io/websiteSetup/apps/blockplan/');
   const newApp = resolveAppInfo({ repository: 'harshaxnim/new-app' });
   assert.deepEqual(resolveCatalogueApps(newApp, HOSTED_APPS), [newApp]);
   assert.throws(() => resolveCatalogueApps(primary, [{ path: '../escape/', appId: 'escape', details: {} }]), /relative directory/);

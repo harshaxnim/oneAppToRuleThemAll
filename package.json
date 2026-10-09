@@ -10,7 +10,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test tests/app-id.test.js tests/app-info.test.js tests/github-discovery.test.js tests/page-status.test.js tests/tracker.test.js tests/catalogue.test.js",
+    "test": "node --test tests/app-id.test.js tests/app-info.test.js tests/github-discovery.test.js tests/page-status.test.js tests/tracker.test.js tests/catalogue.test.js tests/blockplan.test.js",
     "test:rules": "firebase emulators:exec --only firestore --project demo-personal-apps 'node --test --test-concurrency=1 tests/storage.test.js tests/registry.test.js'",
     "test:browser": "playwright test",
     "test:e2e": "firebase emulators:exec --only auth,firestore --project demo-personal-apps 'playwright test --config playwright.emulator.config.js'",

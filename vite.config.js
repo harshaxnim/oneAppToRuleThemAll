@@ -27,7 +27,7 @@ const catalogue = { schemaVersion: 1, repository, template: TEMPLATE_REPOSITORY,
 export default defineConfig({
   base: './',
   define: { __APP_REPOSITORY__: JSON.stringify(repository) },
-  build: { rollupOptions: { input: { directory: 'index.html', tracker: 'learning-tracker/index.html', techWeek: 'apps/sf-tech-week-oct-8/index.html', notebook: 'examples/notebook/index.html', publisher: 'setup/publisher/index.html' } } },
+  build: { rollupOptions: { input: { directory: 'index.html', tracker: 'learning-tracker/index.html', techWeek: 'apps/sf-tech-week-oct-8/index.html', blockplan: 'apps/blockplan/index.html', notebook: 'examples/notebook/index.html', publisher: 'setup/publisher/index.html' } } },
   plugins: [{
     name: 'app-manifest',
     configureServer(server) {

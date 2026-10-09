@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#40508f" />
+    <meta name="description" content="Plan your day and week with time blocks. Drag blocks onto a horizontal timeline where each block’s width is its duration." />
+    <title>Blockplan</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#timeline">Skip to timeline</a>
+    <header class="top">
+      <div class="bar">
+        <a class="back" href="../../" aria-label="All apps">‹ Apps</a>
+        <span class="brand">Blockplan</span>
+        <button type="button" class="icon-btn" id="menu-button" aria-label="Menu" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+        </button>
+      </div>
+      <div class="nav">
+        <div class="seg" role="tablist" aria-label="Planner view">
+          <button type="button" role="tab" id="tab-day" data-view="day" aria-selected="true" aria-controls="board">Day</button>
+          <button type="button" role="tab" id="tab-week" data-view="week" aria-selected="false" aria-controls="board">Week</button>
+        </div>
+        <div class="dates">
+          <button type="button" class="icon-btn" id="prev" aria-label="Previous day">‹</button>
+          <button type="button" class="today" id="today">Today</button>
+          <button type="button" class="icon-btn" id="next" aria-label="Next day">›</button>
+        </div>
+      </div>
+      <h1 id="heading" aria-live="polite">Today</h1>
+      <p class="summary" id="summary"></p>
+    </header>
+
+    <main id="board" role="tabpanel" aria-labelledby="tab-day">
+      <section class="timeline-card" aria-label="Timeline">
+        <div class="scroller" id="timeline" tabindex="-1">
+          <div class="track" id="track"></div>
+        </div>
+      </section>
+      <section class="tray-card" id="tray-card" aria-labelledby="tray-title">
+        <div class="tray-head">
+          <h2 id="tray-title">To plan</h2>
+          <p class="hint" id="tray-hint"></p>
+        </div>
+        <div class="tray" id="tray"></div>
+      </section>
+      <p class="status" id="status" role="status"></p>
+    </main>
+
+    <div class="pickbar" id="pickbar" hidden>
+      <p id="pick-text"></p>
+      <div class="pick-actions">
+        <button type="button" id="pick-auto">Next free time</button>
+        <button type="button" id="pick-edit">Edit</button>
+        <button type="button" class="icon-btn" id="pick-cancel" aria-label="Put down">✕</button>
+      </div>
+    </div>
+
+    <button type="button" class="fab" id="add">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <span>New block</span>
+    </button>
+
+    <dialog id="block-dialog" aria-labelledby="block-title">
+      <form id="block-form" method="dialog" novalidate>
+        <div class="sheet-head">
+          <h2 id="block-title">New block</h2>
+          <button type="button" class="icon-btn close" data-close aria-label="Close">✕</button>
+        </div>
+        <div class="sheet-body">
+          <label class="field">
+            <span>Name</span>
+            <input id="f-title" name="title" autocomplete="off" maxlength="80" placeholder="e.g. Write report 90m" required />
+          </label>
+          <fieldset class="field">
+            <legend>Type</legend>
+            <div class="chips" id="f-types" role="radiogroup" aria-label="Type"></div>
+            <div class="new-type" id="new-type" hidden>
+              <input id="nt-name" maxlength="32" placeholder="Type name" aria-label="New type name" autocomplete="off" />
+              <div class="swatches" id="nt-colors" role="radiogroup" aria-label="New type color"></div>
+              <div class="row-end">
+                <button type="button" class="text-btn" id="nt-cancel">Cancel</button>
+                <button type="button" class="soft-btn" id="nt-save">Add type</button>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset class="field">
+            <legend>Length</legend>
+            <div class="chips" id="f-presets"></div>
+            <div class="stepper">
+              <button type="button" class="icon-btn" id="f-less" aria-label="Shorter">−</button>
+              <output id="f-length" aria-live="polite"></output>
+              <button type="button" class="icon-btn" id="f-more" aria-label="Longer">+</button>
+            </div>
+          </fieldset>
+          <div class="field" id="f-when"></div>
+          <label class="check" id="f-reusable-row">
+            <input type="checkbox" id="f-reusable" />
+            <span><b>Reusable</b><small>Stays in the tray when you place it. Good for things you do often.</small></span>
+          </label>
+          <p class="error" id="block-error" role="alert"></p>
+        </div>
+        <div class="sheet-foot">
+          <div class="foot-left">
+            <button type="button" class="text-btn danger" id="f-delete">Delete</button>
+            <button type="button" class="text-btn" id="f-duplicate">Duplicate</button>
+          </div>
+          <button type="submit" class="primary" id="f-save">Add to tray</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="menu-dialog" aria-labelledby="menu-title">
+      <div class="sheet-head">
+        <h2 id="menu-title">Plan settings</h2>
+        <button type="button" class="icon-btn close" data-close aria-label="Close">✕</button>
+      </div>
+      <div class="sheet-body">
+        <section class="menu-section" aria-labelledby="account-title">
+          <h3 id="account-title">Account</h3>
+          <p class="muted" id="account-text">Your plan is saved on this device.</p>
+          <button type="button" class="soft-btn" id="account-button">Sign in with Google to sync</button>
+        </section>
+        <section class="menu-section" aria-labelledby="types-title">
+          <h3 id="types-title">Types</h3>
+          <p class="muted">Colors mean types everywhere in your plan.</p>
+          <ul class="type-list" id="type-list"></ul>
+          <button type="button" class="soft-btn" id="menu-new-type">New type</button>
+        </section>
+        <section class="menu-section" aria-labelledby="hours-title">
+          <h3 id="hours-title">Planning hours</h3>
+          <div class="hours">
+            <label class="field"><span>Day starts</span><select id="s-start"></select></label>
+            <label class="field"><span>Day ends</span><select id="s-end"></select></label>
+          </div>
+        </section>
+        <section class="menu-section" aria-labelledby="backup-title">
+          <h3 id="backup-title">Backup</h3>
+          <div class="row-start">
+            <button type="button" class="soft-btn" id="export">Export plan</button>
+            <label class="soft-btn file">Import plan<input type="file" id="import" accept="application/json,.json" /></label>
+          </div>
+        </section>
+      </div>
+    </dialog>
+
+    <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+      <div class="sheet-head"><h2 id="confirm-title">Delete type?</h2></div>
+      <div class="sheet-body"><p id="confirm-text"></p></div>
+      <div class="sheet-foot">
+        <button type="button" class="text-btn" data-close>Cancel</button>
+        <button type="button" class="primary danger-bg" id="confirm-ok">Delete</button>
+      </div>
+    </dialog>
+
+    <p id="hint-keys" hidden>Arrow keys move by one step. Shift with arrow keys changes the length. Delete moves it back to the tray.</p>
+    <div class="toast" id="toast" role="status" hidden><span id="toast-text"></span><button type="button" id="toast-undo">Undo</button></div>
+    <div class="sr-only" id="announce" aria-live="assertive"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
