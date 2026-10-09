@@ -88,19 +88,15 @@ main { max-width: 1120px; margin: 0 auto; display: grid; gap: 14px; }
 .ticks { position: absolute; left: 0; right: 0; height: 22px; }
 .tick { position: absolute; top: 4px; padding-left: 5px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; border-left: 1px solid var(--line); line-height: 16px; white-space: nowrap; }
 .tick.day-start { border-left-color: transparent; }
-.days { position: absolute; left: 0; right: 0; top: 0; height: 30px; }
-.day-label { position: absolute; top: 0; height: 30px; display: flex; align-items: center; gap: 6px; padding-left: 4px; border-left: 2px solid var(--line); }
+.days { position: absolute; left: 0; right: 0; top: 0; height: 44px; }
+.day-label { position: absolute; top: 0; height: 44px; display: flex; align-items: stretch; border-left: 2px solid var(--line); }
 .day-label:first-child { border-left-color: transparent; }
-.day-label button { min-height: 30px; padding: 0 6px; font-weight: 650; font-size: 13px; border-radius: 8px; position: sticky; left: 4px; }
+.day-label button { flex: 1; min-height: 44px; display: flex; align-items: baseline; gap: 6px; padding: 0 10px; border-radius: 0; text-align: left; }
 .day-label button:hover { background: var(--soft); }
-.day-label.is-today button { color: var(--theme); }
-.context { position: absolute; left: 0; right: 0; height: 20px; }
-.context-bar {
-  position: absolute; top: 2px; height: 16px; border-radius: 5px; padding: 0 6px; font-size: 11px; line-height: 16px; font-weight: 600;
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  background: color-mix(in srgb, var(--c) 14%, white); color: color-mix(in srgb, var(--c) 55%, #1f2433);
-  border: 1px dashed color-mix(in srgb, var(--c) 55%, white);
-}
+.day-label .dow { font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.day-label .dom { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.day-label.is-today .dow, .day-label.is-today .dom { color: var(--theme); }
+.day-label.is-today .dom { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .lanes {
   position: absolute; left: 0; right: 0; cursor: copy;
   background-image: linear-gradient(to right, var(--line) 1px, transparent 1px);
@@ -358,3 +354,28 @@ dialog::backdrop { background: rgb(22 26 40 / 42%); }
   .fab { padding: 0; width: 52px; justify-content: center; }
   main { gap: 10px; }
 }
+
+/* ---------- Week plans as circles in the day view ---------- */
+.week-dots { display: flex; align-items: center; gap: 2px 6px; flex-wrap: wrap; margin: -6px 0 10px; }
+.week-dots-label { font-size: 13px; color: var(--muted); }
+.dots { display: flex; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
+.dot { width: 44px; height: 44px; min-height: 44px; display: grid; place-items: center; border-radius: 12px; }
+.dot:hover { background: var(--soft); }
+.dot-mark { width: 18px; height: 18px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px color-mix(in srgb, var(--c) 45%, transparent); }
+.dot[aria-expanded="true"] .dot-mark { transform: scale(1.2); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--c); }
+/* Done reads as a hollow ring with a check, not just a lighter color. */
+.dot.done .dot-mark { background: var(--surface); border: 2.5px solid var(--c); display: grid; place-items: center; }
+.dot.done .dot-mark::after { content: "✓"; font-size: 11px; font-weight: 800; line-height: 1; color: var(--c); }
+.week-pop {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px 8px;
+  margin: 0 0 12px; padding: 10px 6px 8px 14px; border-radius: var(--radius); background: color-mix(in srgb, var(--c) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--c) 35%, var(--surface)); border-left: 4px solid var(--c);
+}
+.week-pop h2 { margin: 0; font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
+.pop-meta { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+.pop-text { padding-top: 4px; min-width: 0; }
+.pop-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; margin-left: -4px; }
+.pop-actions .soft-btn { background: var(--surface); }
+@media (prefers-reduced-motion: no-preference) { .week-pop:not([hidden]) { animation: rise .16s ease-out; } }
+@media (min-width: 720px) { .week-dots, .week-pop { grid-column: 1; } .week-pop { max-width: 520px; } }
+@media (orientation: landscape) and (max-height: 500px) { .week-dots, .week-pop { grid-column: 1 / -1; } .week-dots { margin: -4px 0 6px; } }

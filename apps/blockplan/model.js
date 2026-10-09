@@ -1,8 +1,9 @@
 // Pure planning model: no DOM, no storage. Times are minutes since midnight;
 // dates are local YYYY-MM-DD keys so a plan never shifts with time zones.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const DAY_MINUTES = 1440;
-export const SNAP = { day: 15, week: 60 };
+// Day blocks move in 15 minute steps; week blocks are whole days.
+export const SNAP = { day: 15, week: 1440 };
 export const LIMITS = { title: 80, typeName: 32, types: 24, blocks: 4000 };
 export const PALETTE = [
   { color: '#e0684b', name: 'Coral' },
@@ -113,13 +114,14 @@ export function validateBlock(block, typeIds) {
   const minutes = Number(block.minutes);
   const max = scope === 'week' ? 7 * DAY_MINUTES : DAY_MINUTES;
   if (!Number.isInteger(minutes) || minutes < SNAP[scope] || minutes > max || minutes % SNAP[scope]) {
-    throw new Error(scope === 'week' ? 'Week blocks last whole hours, up to a week.' : 'Day blocks last 15 minute steps, up to a day.');
+    throw new Error(scope === 'week' ? 'Week blocks last whole days, up to a week.' : 'Day blocks last 15 minute steps, up to a day.');
   }
   let at = null;
   if (block.at) {
     const start = Number(block.at.start);
     if (!parseDate(block.at.date) || !Number.isInteger(start) || start < 0 || start >= DAY_MINUTES) throw new Error('The block has an invalid time.');
-    at = { date: block.at.date, start };
+    // Week blocks belong to a day, not a time of day.
+    at = { date: block.at.date, start: scope === 'week' ? 0 : start };
   }
   return { id: block.id, title, typeId: block.typeId, minutes, scope, reusable: block.reusable === true && !at, done: block.done === true && Boolean(at), at };
 }
@@ -141,8 +143,16 @@ export function validateState(raw, { strict = false } = {}) {
   });
   const types = keep(raw.types, validateType).filter((type, index, all) => all.findIndex(other => other.id === type.id) === index);
   const typeIds = new Set(types.map(type => type.id));
-  const blocks = keep(raw.blocks, block => validateBlock(block, typeIds)).filter((block, index, all) => all.findIndex(other => other.id === block.id) === index);
-  return { schemaVersion: SCHEMA_VERSION, settings: validateSettings(raw.settings), types, blocks };
+  const settings = validateSettings(raw.settings);
+  const blocks = keep(raw.blocks, block => validateBlock(upgradeBlock(block, settings), typeIds)).filter((block, index, all) => all.findIndex(other => other.id === block.id) === index);
+  return { schemaVersion: SCHEMA_VERSION, settings, types, blocks };
+}
+// Version 1 sized week blocks in planning hours. They become whole days,
+// rounding up, so nothing planned shrinks to zero.
+function upgradeBlock(block, settings) {
+  if (block?.scope !== 'week' || !Number.isInteger(block.minutes) || block.minutes % DAY_MINUTES === 0) return block;
+  const days = clamp(Math.ceil(block.minutes / windowLength(settings)), 1, 7);
+  return { ...block, minutes: days * DAY_MINUTES, at: block.at ? { ...block.at, start: 0 } : block.at };
 }
 
 // ---------- Queries ----------
@@ -160,34 +170,28 @@ export function scatterKey(id) {
 export function dayPlaced(state, date) {
   return state.blocks.filter(block => block.scope === 'day' && block.at?.date === date).sort((a, b) => a.at.start - b.at.start);
 }
-// Week blocks occupy a continuous run of planning hours: Monday's window,
-// then Tuesday's, and so on. Offsets are minutes into that run.
+// The week axis is seven day columns. Offsets are minutes from Monday, always
+// on a day boundary.
 export function weekOffset(state, date, start, week) {
   const index = week.indexOf(date);
-  if (index < 0) return null;
-  return index * windowLength(state.settings) + start - state.settings.dayStart;
+  return index < 0 ? null : index * DAY_MINUTES;
 }
 export function fromWeekOffset(state, offset, week) {
-  const length = windowLength(state.settings);
-  const index = clamp(Math.floor(offset / length), 0, 6);
-  return { date: week[index], start: state.settings.dayStart + offset - index * length };
+  return { date: week[clamp(Math.floor(offset / DAY_MINUTES), 0, 6)], start: 0 };
 }
+export function blockDays(block) { return Math.max(1, Math.round(block.minutes / DAY_MINUTES)); }
 export function weekPlaced(state, anyDate) {
   const week = weekDays(anyDate);
   return state.blocks.filter(block => block.scope === 'week' && block.at && week.includes(block.at.date))
     .map(block => ({ block, offset: weekOffset(state, block.at.date, block.at.start, week) }))
     .sort((a, b) => a.offset - b.offset);
 }
-// Week blocks that touch a given day, as day-time spans, for the context strip.
+// Week blocks that include a given day, with the days they span.
 export function weekContextForDay(state, date) {
-  const week = weekDays(date);
-  const index = week.indexOf(date), length = windowLength(state.settings);
-  const dayFrom = index * length, dayTo = dayFrom + length;
-  return weekPlaced(state, date).flatMap(({ block, offset }) => {
-    const from = Math.max(offset, dayFrom), to = Math.min(offset + block.minutes, dayTo);
-    if (to <= from) return [];
-    return [{ block, start: state.settings.dayStart + from - dayFrom, end: state.settings.dayStart + to - dayFrom }];
-  });
+  const index = weekDays(date).indexOf(date);
+  return weekPlaced(state, date)
+    .filter(({ block, offset }) => offset <= index * DAY_MINUTES && offset + block.minutes > index * DAY_MINUTES)
+    .map(({ block }) => ({ block, from: block.at.date, to: addDays(block.at.date, blockDays(block) - 1) }));
 }
 // Greedy interval colouring: overlapping blocks stack into lanes.
 export function assignLanes(items) {
@@ -225,7 +229,7 @@ export function nextFreeStart(state, date, minutes, from = state.settings.daySta
   return null;
 }
 export function nextFreeWeekOffset(state, date, minutes) {
-  const week = weekDays(date), total = 7 * windowLength(state.settings);
+  const week = weekDays(date), total = 7 * DAY_MINUTES;
   const busy = weekPlaced(state, date).map(({ block, offset }) => [offset, offset + block.minutes]);
   for (let candidate = 0; candidate + minutes <= total; candidate += SNAP.week) {
     if (busy.every(([a, b]) => candidate + minutes <= a || candidate >= b)) return fromWeekOffset(state, candidate, week);
@@ -279,7 +283,7 @@ export function placeBlock(state, id, at) {
     placed = { date: at.date, start };
   } else {
     const week = weekDays(at.date);
-    const total = 7 * windowLength(state.settings);
+    const total = 7 * DAY_MINUTES;
     const offset = clamp(snap(weekOffset(state, at.date, at.start, week), SNAP.week), 0, Math.max(0, total - block.minutes));
     placed = fromWeekOffset(state, offset, week);
   }
@@ -315,12 +319,13 @@ export function seedState(today) {
     block('Call parents', t.life, 45),
     block('Read a chapter', t.life, 30),
     block('Sketch new feature', t.deep, 90),
-    block('Product sprint', t.deep, 16 * 60, { scope: 'week', at: { date: monday, start: 7 * 60 } }),
-    block('Errands', t.admin, 4 * 60, { scope: 'week', at: { date: addDays(monday, 5), start: 9 * 60 } }),
-    block('Long run', t.health, 2 * 60, { scope: 'week' }),
-    block('Plan next quarter', t.deep, 8 * 60, { scope: 'week' }),
-    block('Dinner with friends', t.life, 3 * 60, { scope: 'week' }),
-    block('Expenses', t.admin, 2 * 60, { scope: 'week' }),
+    block('Product sprint', t.deep, 2 * DAY_MINUTES, { scope: 'week', at: { date: monday, start: 0 } }),
+    block('Errands', t.admin, DAY_MINUTES, { scope: 'week', at: { date: addDays(monday, 5), start: 0 } }),
+    block('Long run', t.health, DAY_MINUTES, { scope: 'week', at: { date: today, start: 0 } }),
+    block('Plan next quarter', t.deep, DAY_MINUTES, { scope: 'week' }),
+    block('Dinner with friends', t.life, DAY_MINUTES, { scope: 'week' }),
+    block('Weekend trip', t.life, 2 * DAY_MINUTES, { scope: 'week' }),
+    block('Expenses', t.admin, DAY_MINUTES, { scope: 'week' }),
   ];
   return validateState({ schemaVersion: SCHEMA_VERSION, settings: { ...DEFAULT_SETTINGS }, types, blocks }, { strict: true });
 }

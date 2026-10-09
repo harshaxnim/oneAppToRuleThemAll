@@ -145,30 +145,86 @@ test('touch: press and hold drags onto the timeline; a quick swipe does not', as
   await context.close();
 });
 
-test('week: its own tray, next free time, day view shows the week context', async ({ page }) => {
+test('week: day columns with day-long blocks and its own tray', async ({ page }) => {
   const errors = await open(page, { width: 390, height: 844 });
   await page.getByRole('tab', { name: 'Week' }).click();
   await expect(page.locator('#heading')).toContainText('Oct 5 – 11');
+  await expect(page.locator('.day-label')).toHaveCount(7);
+  await expect(page.locator('.tick'), 'no hour ticks in the week').toHaveCount(0);
+  await expect(page.locator('#summary')).toContainText('4 days planned');
+  await expect(page.locator('#free-time')).toHaveText('3 open days this week');
   await expect(page.locator('#tray-title')).toContainText('To plan this week');
   await expect(tray(page, 'Gym')).toHaveCount(0);
+
+  // Next open day skips Monday–Tuesday (sprint) and lands on Wednesday.
   await tray(page, 'Plan next quarter').click();
-  await page.getByRole('button', { name: 'Next free time' }).click();
-  await expect(placed(page, 'Plan next quarter')).toHaveAttribute('aria-label', /Tue 7:00 am – 3:00 pm, Half day/);
+  await expect(page.getByRole('button', { name: 'Next open day' })).toBeVisible();
+  await page.getByRole('button', { name: 'Next open day' }).click();
+  await expect(placed(page, 'Plan next quarter')).toHaveAttribute('aria-label', /Deep work, Wed, 1 day$/);
+
+  // Tapping Sunday with a two-day block keeps it inside the week: Sat – Sun.
+  await tray(page, 'Weekend trip').click();
+  const sunday = page.locator('.day-label').last();
+  await sunday.scrollIntoViewIfNeeded();
+  const column = await sunday.boundingBox();
+  const lanes = await page.locator('#lanes').boundingBox();
+  await page.mouse.click(column.x + column.width / 2, lanes.y + 30);
+  await expect(placed(page, 'Weekend trip')).toHaveAttribute('aria-label', /Sat – Sun, 2 days$/);
+  await expect(page.locator('#summary')).toContainText('7 days planned');
   await noOverflow(page);
 
   await page.getByRole('button', { name: 'New block' }).click();
   await expect(page.locator('#block-title')).toHaveText('New week block');
-  await page.getByLabel('Name', { exact: true }).fill('Offsite 1d');
-  await expect(page.locator('#f-length')).toHaveText('1 day');
+  await page.getByLabel('Name', { exact: true }).fill('Offsite 2d');
+  await expect(page.locator('#f-length')).toHaveText('2 days');
   await page.getByRole('button', { name: 'Add to tray' }).click();
-  await expect(tray(page, 'Offsite')).toContainText('1 day');
+  await expect(tray(page, 'Offsite')).toContainText('2 days');
+  expect(errors).toEqual([]);
+});
 
-  await page.getByRole('button', { name: /Open Tuesday, October 6/ }).click();
-  await expect(page.getByRole('tab', { name: 'Day' })).toHaveAttribute('aria-selected', 'true');
+test('day view: circles for the day’s week plans open a card with actions', async ({ page }) => {
+  const errors = await open(page, { width: 360, height: 780 });
+  // Friday has the seeded “Long run”; Monday has the two-day sprint.
+  await expect(page.locator('#dots .dot')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Previous day' }).click();
+  await page.getByRole('button', { name: 'Previous day' }).click();
+  await page.getByRole('button', { name: 'Previous day' }).click();
   await expect(page.locator('#heading')).toContainText('Tuesday, October 6');
-  await expect(page.locator('.context-bar')).toHaveText('Plan next quarter');
-  await page.getByRole('button', { name: 'Go to today' }).click();
-  await expect(page.locator('#heading')).toContainText('Friday, October 9');
+  const dot = page.getByRole('button', { name: /^Product sprint, Deep work, Monday – Tuesday$/ });
+  await expect(dot).toBeVisible();
+  const box = await dot.boundingBox();
+  expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+
+  await dot.click();
+  await expect(page.locator('#week-pop')).toBeVisible();
+  await expect(page.locator('#pop-title')).toHaveText('Product sprint');
+  await expect(page.locator('#pop-meta')).toHaveText('Deep work · Mon – Tue · 2 days');
+  await expect(page.locator('#pop-done')).toBeFocused();
+  await page.locator('#pop-done').click();
+  await expect(page.locator('#pop-done')).toHaveText('Mark not done');
+  await expect(page.locator('#dots .dot')).toHaveClass(/done/);
+  await expect(page.getByRole('button', { name: /^Done: Product sprint/ })).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#week-pop')).toBeHidden();
+  await expect(page.getByRole('button', { name: /^Done: Product sprint/ })).toBeFocused();
+
+  await page.getByRole('button', { name: /^Done: Product sprint/ }).click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.locator('#block-title')).toHaveText('Edit block');
+  await expect(page.locator('#f-day')).toHaveValue('2026-10-05');
+  await expect(page.locator('#f-start'), 'week blocks have no time of day').toHaveCount(0);
+  await page.locator('#block-dialog').getByRole('button', { name: 'Close' }).click();
+
+  await page.getByRole('button', { name: /^Done: Product sprint/ }).click();
+  await page.getByRole('button', { name: 'Open week' }).click();
+  await expect(page.getByRole('tab', { name: 'Week' })).toHaveAttribute('aria-selected', 'true');
+  await expect(placed(page, 'Product sprint')).toHaveAttribute('aria-label', /^Done: Product sprint/);
+  await page.getByRole('tab', { name: 'Day' }).click();
+  await page.locator('h1').click();
+  await expect(page.locator('#week-pop')).toBeHidden();
+  await page.getByRole('button', { name: 'Next day' }).click();
+  await expect(page.locator('#week-dots'), 'Wednesday has no week plans').toBeHidden();
+  await noOverflow(page);
   expect(errors).toEqual([]);
 });
 
@@ -181,7 +237,7 @@ test('settings: rename and delete a type with undo; planning hours change the ax
   await expect(page.getByLabel('Name of type Family')).toHaveValue('Family');
   await expect(page.locator('#type-list li')).toHaveCount(5);
   await page.getByRole('button', { name: 'Delete type Family' }).click();
-  await expect(page.locator('#confirm-text')).toContainText('3 blocks');
+  await expect(page.locator('#confirm-text')).toContainText('4 blocks');
   await page.locator('#confirm-ok').click();
   await expect(page.locator('#type-list li')).toHaveCount(4);
   await page.locator('#menu-dialog').getByRole('button', { name: 'Close' }).click();

@@ -10,7 +10,7 @@ test('quick titles carry a duration', () => {
   assert.deepEqual(parseQuickTitle('Write report 90m'), { title: 'Write report', minutes: 90 });
   assert.deepEqual(parseQuickTitle('Gym 1h30'), { title: 'Gym', minutes: 90 });
   assert.deepEqual(parseQuickTitle('Deep  work 1.5h'), { title: 'Deep work', minutes: 90 });
-  assert.deepEqual(parseQuickTitle('Trip 2d', { dayLength: 960 }), { title: 'Trip', minutes: 1920 });
+  assert.deepEqual(parseQuickTitle('Trip 2d', { dayLength: 1440 }), { title: 'Trip', minutes: 2880 });
   assert.deepEqual(parseQuickTitle('Read 2 hours'), { title: 'Read', minutes: 120 });
   assert.deepEqual(parseQuickTitle('Plan Q4'), { title: 'Plan Q4', minutes: null });
   assert.deepEqual(parseQuickTitle('90m'), { title: '90m', minutes: null });
@@ -59,21 +59,39 @@ test('placing, reusing, and unplacing blocks', () => {
   assert.equal(dayPlaced(state, today).length, 4);
 });
 
-test('week blocks run across consecutive planning windows', () => {
+test('week blocks are whole days placed on day columns', () => {
   const today = '2026-10-09';
   const state = seedState(today);
   const sprint = weekPlaced(state, today).find(item => item.block.title === 'Product sprint');
   assert.equal(sprint.offset, 0);
-  const plan = state.blocks.find(block => block.title === 'Plan next quarter');
-  const moved = placeBlock(state, plan.id, { date: '2026-10-06', start: 15 * 60 }).state;
-  const tuesday = weekContextForDay(moved, '2026-10-06');
-  assert.deepEqual(tuesday.map(item => [item.block.title, item.start, item.end]), [['Plan next quarter', 15 * 60, 23 * 60]]);
-  const wednesday = weekContextForDay(moved, '2026-10-07');
-  assert.equal(wednesday.length, 0, 'an 8 hour block from 3 pm fills the rest of Tuesday only');
-  const end = placeBlock(state, plan.id, { date: '2026-10-11', start: 22 * 60 }).state;
-  const last = weekPlaced(end, today).find(item => item.block.id === plan.id);
-  assert.equal(last.offset + plan.minutes, 7 * 16 * 60, 'clamped to the end of the week');
-  assert.deepEqual(nextFreeWeekOffset(state, today, 120), { date: '2026-10-06', start: 7 * 60 });
+  assert.equal(sprint.block.minutes, 2 * 1440);
+  assert.equal(formatDuration(sprint.block.minutes, { dayLength: 1440 }), '2 days');
+  const trip = state.blocks.find(block => block.title === 'Weekend trip');
+  // Dropping anywhere on Saturday places it on Saturday with no time of day.
+  const moved = placeBlock(state, trip.id, { date: '2026-10-10', start: 15 * 60 }).state;
+  assert.deepEqual(moved.blocks.find(block => block.id === trip.id).at, { date: '2026-10-10', start: 0 });
+  assert.deepEqual(weekContextForDay(moved, '2026-10-11').map(item => [item.block.title, item.from, item.to]), [['Weekend trip', '2026-10-10', '2026-10-11']]);
+  assert.deepEqual(weekContextForDay(moved, '2026-10-06').map(item => item.block.title), ['Product sprint']);
+  assert.deepEqual(weekContextForDay(moved, '2026-10-08'), []);
+  // A two-day block dropped on Sunday is pulled back so it ends on Sunday.
+  const end = placeBlock(state, trip.id, { date: '2026-10-11', start: 0 }).state;
+  assert.equal(end.blocks.find(block => block.id === trip.id).at.date, '2026-10-10');
+  assert.deepEqual(nextFreeWeekOffset(state, today, 1440), { date: '2026-10-07', start: 0 });
+  const tooShort = state.blocks.find(block => block.title === 'Expenses');
+  assert.throws(() => addBlock(state, { title: 'Two hours', typeId: tooShort.typeId, minutes: 120, scope: 'week' }), /whole days/);
+});
+
+test('hour-based week blocks from the first version become whole days', () => {
+  const state = seedState('2026-10-09');
+  const typeId = state.types[0].id;
+  const old = { ...state, schemaVersion: 1, blocks: [
+    { id: 'a', title: 'Sprint', typeId, minutes: 16 * 60, scope: 'week', at: { date: '2026-10-05', start: 7 * 60 } },
+    { id: 'b', title: 'Run', typeId, minutes: 120, scope: 'week', at: null },
+    { id: 'c', title: 'Offsite', typeId, minutes: 20 * 60, scope: 'week', at: null },
+  ] };
+  const upgraded = validateState(old);
+  assert.equal(upgraded.schemaVersion, 2);
+  assert.deepEqual(upgraded.blocks.map(block => [block.minutes / 1440, block.at]), [[1, { date: '2026-10-05', start: 0 }], [1, null], [2, null]]);
 });
 
 test('next free time skips busy spans', () => {

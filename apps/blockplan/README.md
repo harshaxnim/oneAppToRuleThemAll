@@ -5,9 +5,10 @@ A day and week planner built from time blocks. You keep a pile of things to do (
 ## How it works
 
 - **Types** have a name and one of ten colors. Day and week plans share types, so a color means the same thing everywhere.
-- **Blocks** have a name, type, and length. Day blocks use 15-minute steps. Week blocks use whole hours, and a week's timeline runs through each day's planning hours from Monday to Sunday, so “Half day” is half a day wide.
+- **Blocks** have a name, type, and length. Day blocks use 15-minute steps on an hour timeline. Week blocks last whole days (1–7) and sit in seven day columns, Monday to Sunday, with no time of day. Week plans saved in hours by the first version become whole days, rounded up.
 - **Reusable** blocks stay in the tray when placed; a copy goes on the timeline.
-- Overlapping blocks stack into lanes. Week blocks that fall on a day appear as a thin strip above that day's timeline.
+- Overlapping blocks stack into lanes.
+- In the day view, each week block that includes that day shows as a small circle in its type color under the date (a hollow ring with a check once done). Tapping a circle opens a card with its type, days, and length, and buttons to mark it done, edit it, or open the week.
 
 ## Interactions
 

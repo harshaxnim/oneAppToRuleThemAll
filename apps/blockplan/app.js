@@ -53,7 +53,9 @@ const types = () => typeMap(state());
 const dayLength = () => windowLength(state().settings);
 const step = scope => SNAP[scope];
 const today = () => dateKey(new Date());
-function lengthLabel(block) { return formatDuration(block.minutes, block.scope === 'week' ? { dayLength: dayLength() } : {}); }
+// Week lengths read in days.
+const lengthOptions = scope => scope === 'week' ? { dayLength: DAY_MINUTES } : {};
+function lengthLabel(block) { return formatDuration(block.minutes, lengthOptions(block.scope)); }
 
 // Every change goes through here so it can be undone.
 function commit(next, message, { undoable = true, quiet = false } = {}) {
@@ -87,13 +89,13 @@ function computeGeometry() {
     const fit = width / ((to - from) / 60);
     const base = narrow ? Math.max(96, fit) : Math.max(64, fit);
     const perHour = clamp(base * zoom.day, Math.min(fit, base), 320);
-    return { kind: 'day', from, to, ppm: perHour / 60, step: SNAP.day, fit, max: 320, base };
+    return { kind: 'day', from, to, ppm: perHour / 60, unit: 60, step: SNAP.day, fit, max: 320, base };
   }
-  const total = 7 * dayLength();
-  const fit = width / (total / 60);
-  const base = narrow ? 26 : Math.max(9, fit);
-  const perHour = clamp(base * zoom.week, Math.min(fit, base), 120);
-  return { kind: 'week', from: 0, to: total, ppm: perHour / 60, step: SNAP.week, week: weekDays(date), fit, max: 120, base };
+  // The week is seven day columns; zoom changes how wide a day is.
+  const fit = width / 7;
+  const base = narrow ? 116 : Math.max(110, fit);
+  const perDay = clamp(base * zoom.week, Math.min(fit, base), 320);
+  return { kind: 'week', from: 0, to: 7 * DAY_MINUTES, ppm: perDay / DAY_MINUTES, unit: DAY_MINUTES, step: SNAP.week, week: weekDays(date), fit, max: 320, base };
 }
 function setZoom(factor, focusX) {
   if (!geometry || !store.ready) return;
@@ -113,7 +115,7 @@ function setZoom(factor, focusX) {
 // timeline length.
 function trayScale() {
   const narrow = $('#timeline').clientWidth < 640;
-  return (view === 'day' ? (narrow ? 150 : 132) : (narrow ? 40 : 36)) / 60;
+  return view === 'day' ? (narrow ? 150 : 132) / 60 : (narrow ? 132 : 120) / DAY_MINUTES;
 }
 // Placed items as offsets on the current axis.
 function placedItems() {
@@ -125,11 +127,12 @@ function offsetToAt(offset) {
 }
 function timeLabel(start, end) {
   if (view === 'day') return `${formatClock(start)} – ${formatClock(end)}`;
-  const a = fromWeekOffset(state(), start, geometry.week);
-  const b = fromWeekOffset(state(), Math.max(start, end - 1), geometry.week);
-  const endClock = formatClock(b.start + ((end - start) ? 1 : 0));
-  const dayName = key => parseDate(key).toLocaleDateString(undefined, { weekday: 'short' });
-  return a.date === b.date ? `${dayName(a.date)} ${formatClock(a.start)} – ${endClock}` : `${dayName(a.date)} ${formatClock(a.start)} – ${dayName(b.date)} ${endClock}`;
+  const a = fromWeekOffset(state(), start, geometry.week).date;
+  const b = fromWeekOffset(state(), Math.max(start, end - 1), geometry.week).date;
+  return a === b ? weekdayName(a) : `${weekdayName(a)} – ${weekdayName(b)}`;
+}
+function weekdayName(key, style = 'short') { return parseDate(key).toLocaleDateString(undefined, { weekday: style }); }
+function daySpan(from, to, style = 'short') { return from === to ? weekdayName(from, style) : `${weekdayName(from, style)} – ${weekdayName(to, style)}`;
 }
 
 // ---------- Rendering ----------
@@ -157,8 +160,8 @@ function render() {
   else scroller.scrollLeft = keepScroll;
   scrollIntent = 'keep';
   const { fit, base, max } = geometry;
-  $('#zoom-out').disabled = geometry.ppm * 60 <= Math.min(fit, base) + 0.01;
-  $('#zoom-in').disabled = geometry.ppm * 60 >= max - 0.01;
+  $('#zoom-out').disabled = geometry.ppm * geometry.unit <= Math.min(fit, base) + 0.01;
+  $('#zoom-in').disabled = geometry.ppm * geometry.unit >= max - 0.01;
   if ($('#menu-dialog').open) renderMenu();
 }
 function renderStatus() {
@@ -189,6 +192,7 @@ function renderHeader() {
   }
   if (tag) heading.append(' ', el('span', 'tag', tag));
   $('#free-time').textContent = freeTimeNote();
+  renderWeekDots();
   $('#stuck-date').textContent = view === 'day'
     ? current.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
     : heading.firstChild.textContent;
@@ -203,19 +207,23 @@ function renderHeader() {
     return;
   }
   const total = items.reduce((sum, block) => sum + block.minutes, 0);
-  summary.append(el('b', '', `${formatDuration(total)} planned`));
+  summary.append(el('b', '', `${formatDuration(total, lengthOptions(view))} planned`));
   const byType = types();
   for (const [typeId, minutes] of [...totalsByType(items)].sort((a, b) => b[1] - a[1])) {
     const type = byType.get(typeId);
     const chip = el('span', 'sum');
     chip.style.setProperty('--c', type.color);
-    chip.append(el('i'), `${type.name} ${formatDuration(minutes)}`);
+    chip.append(el('i'), `${type.name} ${formatDuration(minutes, lengthOptions(view))}`);
     summary.append(chip);
   }
 }
 // Unplanned time inside the planning hours, counting overlaps once.
 function freeTimeNote() {
-  const length = dayLength() * (view === 'day' ? 1 : 7);
+  if (view === 'week') {
+    const open = weekDays(date).filter(key => !weekContextForDay(state(), key).length).length;
+    return open ? `${open} open day${open === 1 ? '' : 's'} this week` : 'Every day this week has a plan';
+  }
+  const length = dayLength();
   const from = view === 'day' ? state().settings.dayStart : 0;
   const spans = placedItems().map(item => [Math.max(item.start, from), Math.min(item.end, from + length)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
   let covered = 0, end = -Infinity;
@@ -227,6 +235,61 @@ function freeTimeNote() {
   const free = length - covered;
   return free ? `${formatDuration(free)} free in your planning hours` : 'Planning hours are full';
 }
+// Day view: one small circle per week plan that includes this day.
+let openDot = null;
+function renderWeekDots() {
+  const items = view === 'day' ? weekContextForDay(state(), date) : [];
+  $('#week-dots').hidden = !items.length;
+  if (openDot && !items.some(item => item.block.id === openDot)) openDot = null;
+  const list = $('#dots');
+  list.replaceChildren();
+  for (const item of items) {
+    const { block } = item;
+    const type = types().get(block.typeId);
+    const li = el('li');
+    const dot = el('button', `dot${block.done ? ' done' : ''}`);
+    dot.type = 'button';
+    dot.dataset.id = block.id;
+    blockStyle(dot, block);
+    dot.append(el('span', 'dot-mark'));
+    dot.title = block.title;
+    dot.setAttribute('aria-label', `${block.done ? 'Done: ' : ''}${block.title}, ${type?.name ?? ''}, ${daySpan(item.from, item.to, 'long')}`);
+    dot.setAttribute('aria-expanded', String(openDot === block.id));
+    dot.setAttribute('aria-controls', 'week-pop');
+    dot.addEventListener('click', () => { openDot = openDot === block.id ? null : block.id; renderWeekDots(); if (openDot) $('#pop-done').focus(); });
+    li.append(dot);
+    list.append(li);
+  }
+  const item = items.find(entry => entry.block.id === openDot);
+  $('#week-pop').hidden = !item;
+  if (!item) return;
+  const type = types().get(item.block.typeId);
+  blockStyle($('#week-pop'), item.block);
+  $('#pop-title').textContent = item.block.title;
+  $('#pop-meta').textContent = `${type?.name ?? ''} · ${daySpan(item.from, item.to)} · ${lengthLabel(item.block)}${item.block.done ? ' · Done' : ''}`;
+  $('#pop-done').textContent = item.block.done ? 'Mark not done' : 'Mark done';
+}
+function closeDot(focus = true) {
+  const id = openDot;
+  openDot = null;
+  renderWeekDots();
+  if (focus && id) $(`#dots [data-id="${id}"]`)?.focus();
+}
+$('#pop-close').addEventListener('click', () => closeDot());
+$('#pop-done').addEventListener('click', () => {
+  const block = state().blocks.find(item => item.id === openDot);
+  if (block) commit(updateBlock(state(), block.id, { done: !block.done }), `${block.title} marked ${block.done ? 'not done' : 'done'}`);
+  $('#pop-done').focus();
+});
+$('#pop-edit').addEventListener('click', () => { const id = openDot; closeDot(false); openBlockSheet({ id }); });
+$('#pop-week').addEventListener('click', () => { closeDot(false); setView('week'); });
+document.addEventListener('click', event => {
+  // A tapped circle is redrawn, so a detached target still counts as inside.
+  if (openDot && event.target.isConnected && !event.target.closest('#week-pop, #dots')) closeDot(false);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && openDot && !document.querySelector('dialog[open]')) closeDot();
+});
 function blockStyle(node, block) {
   const type = types().get(block.typeId);
   node.style.setProperty('--c', type?.color ?? '#6b7785');
@@ -240,63 +303,40 @@ function renderTimeline() {
   track.style.width = `${width}px`;
   track.className = `track ${view}`;
   let top = 0;
-  // Axis
+  // Axis: day columns for the week, hour ticks for a day.
   if (view === 'week') {
     const days = el('div', 'days');
-    const length = dayLength();
+    const dayWidth = DAY_MINUTES * ppm;
     geometry.week.forEach((key, index) => {
       const cell = el('div', `day-label${key === today() ? ' is-today' : ''}`);
-      cell.style.left = `${index * length * ppm}px`;
-      cell.style.width = `${length * ppm}px`;
+      cell.style.left = `${index * dayWidth}px`;
+      cell.style.width = `${dayWidth}px`;
       const d = parseDate(key);
-      const button = el('button', '', `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${d.getDate()}`);
+      const button = el('button');
       button.type = 'button';
-      button.setAttribute('aria-label', `Open ${d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} in the day view`);
+      button.append(el('span', 'dow', weekdayName(key)), el('span', 'dom', String(d.getDate())));
+      button.setAttribute('aria-label', `Open ${d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}${key === today() ? ', today,' : ''} in the day view`);
       button.addEventListener('click', () => { date = key; setView('day'); });
       cell.append(button);
-      if (key === today()) cell.append(el('span', 'tag', 'Today'));
       days.append(cell);
     });
     track.append(days);
-    top += 30;
-  }
-  const ticks = el('div', 'ticks');
-  ticks.style.top = `${top}px`;
-  const hourPx = 60 * ppm;
-  const every = view === 'day' ? (hourPx >= 44 ? 60 : 120) : (hourPx * 3 >= 34 ? 180 : 360);
-  const length = view === 'week' ? dayLength() : 0;
-  for (let t = from; t < to; t += 60) {
-    const clock = view === 'day' ? t : state().settings.dayStart + (t % length);
-    const local = view === 'day' ? t - from : t % length;
-    // Skip a label that would crowd the next day's first label.
-    if (local % every || (view === 'week' && length - local < every * 0.6)) continue;
-    const tick = el('span', `tick${view === 'week' && t % length === 0 ? ' day-start' : ''}`, formatClock(clock, { compact: true }));
-    tick.style.left = `${(t - from) * ppm}px`;
-    ticks.append(tick);
-  }
-  track.append(ticks);
-  top += 22;
-  // Week context strip in the day view
-  if (view === 'day') {
-    const context = weekContextForDay(state(), date);
-    if (context.length) {
-      const strip = el('div', 'context');
-      strip.style.top = `${top}px`;
-      strip.setAttribute('role', 'list');
-      strip.setAttribute('aria-label', 'From your week plan');
-      for (const item of context) {
-        const bar = el('div', 'context-bar', item.block.title);
-        bar.setAttribute('role', 'listitem');
-        blockStyle(bar, item.block);
-        bar.style.left = `${(item.start - from) * ppm}px`;
-        bar.style.width = `${(item.end - item.start) * ppm}px`;
-        bar.title = `Week plan: ${item.block.title}`;
-        strip.append(bar);
-      }
-      track.append(strip);
-      top += 22;
+    top += 44;
+  } else {
+    const ticks = el('div', 'ticks');
+    ticks.style.top = `${top}px`;
+    const hourPx = 60 * ppm;
+    const every = hourPx >= 44 ? 60 : 120;
+    for (let t = from; t < to; t += 60) {
+      if ((t - from) % every) continue;
+      const tick = el('span', 'tick', formatClock(t, { compact: true }));
+      tick.style.left = `${(t - from) * ppm}px`;
+      ticks.append(tick);
     }
+    track.append(ticks);
+    top += 22;
   }
+  const hourPx = 60 * ppm;
   // Lanes
   const items = placedItems();
   const { lanes, count } = assignLanes(items.map(item => ({ id: item.block.id, start: item.start, end: item.end })));
@@ -305,7 +345,7 @@ function renderTimeline() {
   area.style.top = `${top}px`;
   area.style.height = `${Math.max(count, 2) * LANE + 6}px`;
   area.style.setProperty('--hour', `${hourPx}px`);
-  area.style.setProperty('--day', `${dayLength() * ppm}px`);
+  area.style.setProperty('--day', `${DAY_MINUTES * ppm}px`);
   area.setAttribute('aria-label', picked ? 'Timeline. Choose a time to place the picked block.' : 'Timeline');
   geometry.top = top;
   geometry.count = count;
@@ -331,8 +371,8 @@ function renderTimeline() {
     const index = geometry.week.indexOf(today());
     if (index >= 0) {
       const shade = el('div', 'today-shade');
-      shade.style.left = `${index * dayLength() * ppm}px`;
-      shade.style.width = `${dayLength() * ppm}px`;
+      shade.style.left = `${index * DAY_MINUTES * ppm}px`;
+      shade.style.width = `${DAY_MINUTES * ppm}px`;
       area.append(shade);
     }
   }
@@ -415,7 +455,8 @@ function renderPickbar() {
   bar.hidden = !block;
   document.body.classList.toggle('has-pick', Boolean(block));
   if (!block) return;
-  $('#pick-text').textContent = `${coarse ? 'Tap' : 'Click'} the timeline to place “${block.title}” (${lengthLabel(block)})`;
+  $('#pick-text').textContent = `${coarse ? 'Tap' : 'Click'} ${block.scope === 'week' ? 'a day' : 'the timeline'} to place “${block.title}” (${lengthLabel(block)})`;
+  $('#pick-auto').textContent = block.scope === 'week' ? 'Next open day' : 'Next free time';
 }
 function scrollToFocus() {
   const scroller = $('#timeline');
@@ -426,7 +467,7 @@ function scrollToFocus() {
     target = date === today() ? now.getHours() * 60 + now.getMinutes() - 60 : (items[0]?.start ?? state().settings.dayStart) - 30;
   } else {
     const index = geometry.week.indexOf(today());
-    target = index > 0 ? index * dayLength() : 0;
+    target = index > 0 ? index * DAY_MINUTES : 0;
   }
   scroller.scrollLeft = Math.max(0, (target - geometry.from) * geometry.ppm);
 }
@@ -448,8 +489,8 @@ function place(id, at, verb = 'Placed') {
     const result = placeBlock(state(), id, at);
     const placed = result.state.blocks.find(item => item.id === result.id);
     picked = null;
-    const where = block.scope === 'day' ? formatClock(placed.at.start) : `${parseDate(placed.at.date).toLocaleDateString(undefined, { weekday: 'long' })} ${formatClock(placed.at.start)}`;
-    if (commit(result.state, `${verb} ${block.title} at ${where}`, { quiet: true })) {
+    const where = block.scope === 'day' ? `at ${formatClock(placed.at.start)}` : `on ${weekdayName(placed.at.date, 'long')}`;
+    if (commit(result.state, `${verb} ${block.title} ${where}`, { quiet: true })) {
       requestAnimationFrame(() => document.querySelector(`.placed[data-id="${result.id}"]`)?.classList.add('arrived'));
     }
   } catch (error) { toast(error.message); }
@@ -465,7 +506,7 @@ function placeNextFree(id) {
     place(id, { date, start });
   } else {
     const at = nextFreeWeekOffset(state(), date, block.minutes);
-    if (!at) { toast(`No free ${lengthLabel(block)} left this week`); return; }
+    if (!at) { toast(`No ${lengthLabel(block)} left open this week`); return; }
     place(id, at);
   }
   scrollToBlock();
@@ -503,7 +544,7 @@ function placedKeys(event, block) {
       const start = block.scope === 'day' ? block.at.start : weekOffset(state(), block.at.date, block.at.start, weekDays(block.at.date));
       const minutes = clamp(block.minutes + direction * stepSize, stepSize, (block.scope === 'day' ? DAY_MINUTES : geometry.to) - start);
       if (minutes === block.minutes) return;
-      commitKeep(updateBlock(state(), block.id, { minutes }), `${block.title} now ${formatDuration(minutes, block.scope === 'week' ? { dayLength: dayLength() } : {})}`, block.id);
+      commitKeep(updateBlock(state(), block.id, { minutes }), `${block.title} now ${formatDuration(minutes, lengthOptions(block.scope))}`, block.id);
     } else {
       const offset = block.scope === 'day' ? block.at.start : weekOffset(state(), block.at.date, block.at.start, weekDays(block.at.date));
       const result = placeBlock(state(), block.id, offsetToAt(offset + direction * stepSize));
@@ -521,7 +562,7 @@ function placedKeys(event, block) {
 }
 function timeLabelFor(block) {
   if (block.scope === 'day') return formatClock(block.at.start);
-  return `${parseDate(block.at.date).toLocaleDateString(undefined, { weekday: 'short' })} ${formatClock(block.at.start)}`;
+  return `on ${weekdayName(block.at.date, 'long')}`;
 }
 function commitKeep(next, message, focusId) {
   if (!commit(next, message, { quiet: true })) return;
@@ -554,7 +595,7 @@ function dragMove({ clientX, clientY, left, mode, el: node, x: startX }) {
     const minutes = clamp(snap(block.minutes + (clientX - startX) / geometry.ppm, stepSize), stepSize, geometry.to - start);
     drop.minutes = minutes;
     node.style.width = `${minutes * geometry.ppm}px`;
-    node.querySelector('.b-meta').textContent = block.scope === 'day' ? `${formatClock(block.at.start, { compact: true })} · ${formatDuration(minutes)}` : formatDuration(minutes, { dayLength: dayLength() });
+    node.querySelector('.b-meta').textContent = block.scope === 'day' ? `${formatClock(block.at.start, { compact: true })} · ${formatDuration(minutes)}` : formatDuration(minutes, lengthOptions('week'));
     return;
   }
   const card = $('.timeline-card').getBoundingClientRect();
@@ -600,7 +641,7 @@ function dragEnd({ commit: ok, mode }) {
   const { block } = session;
   if (mode === 'resize') {
     if (session.minutes !== block.minutes) {
-      commit(updateBlock(state(), block.id, { minutes: session.minutes }), `${block.title} now ${formatDuration(session.minutes, block.scope === 'week' ? { dayLength: dayLength() } : {})}`, { quiet: true });
+      commit(updateBlock(state(), block.id, { minutes: session.minutes }), `${block.title} now ${formatDuration(session.minutes, lengthOptions(block.scope))}`, { quiet: true });
     } else render();
   } else if (session.target?.kind === 'timeline') {
     place(block.id, offsetToAt(session.target.offset), block.at ? 'Moved' : 'Placed');
@@ -614,8 +655,7 @@ function dragEnd({ commit: ok, mode }) {
 const sheet = { id: null, scope: 'day', draft: null, placeAt: null, newColor: null };
 function presetsFor(scope) {
   if (scope === 'day') return [15, 30, 45, 60, 90, 120, 180];
-  const length = dayLength();
-  return [60, 120, length / 2, length, length * 2].filter(value => value % 60 === 0);
+  return [1, 2, 3, 5, 7].map(days => days * DAY_MINUTES);
 }
 function openBlockSheet({ id = null, placeAt = null }) {
   if (!store.ready) return;
@@ -625,10 +665,10 @@ function openBlockSheet({ id = null, placeAt = null }) {
   sheet.id = existing?.id ?? null;
   sheet.scope = scope;
   sheet.placeAt = placeAt;
-  sheet.draft = existing ? structuredClone(existing) : { title: '', typeId: firstType?.id ?? null, minutes: scope === 'day' ? 60 : 240, reusable: false, at: null, done: false, scope };
+  sheet.draft = existing ? structuredClone(existing) : { title: '', typeId: firstType?.id ?? null, minutes: scope === 'day' ? 60 : DAY_MINUTES, reusable: false, at: null, done: false, scope };
   $('#block-title').textContent = existing ? 'Edit block' : scope === 'day' ? 'New block' : 'New week block';
   $('#f-title').value = existing?.title ?? '';
-  $('#f-title').placeholder = scope === 'day' ? 'e.g. Write report 90m' : 'e.g. Plan the offsite 1d';
+  $('#f-title').placeholder = scope === 'day' ? 'e.g. Write report 90m' : 'e.g. Offsite 2d';
   $('#block-error').textContent = '';
   $('#new-type').hidden = true;
   $('#f-delete').hidden = !existing;
@@ -663,7 +703,7 @@ function renderSheet() {
   // Length
   const presets = $('#f-presets');
   presets.replaceChildren();
-  const labelOptions = scope === 'week' ? { dayLength: dayLength() } : {};
+  const labelOptions = lengthOptions(scope);
   for (const minutes of presetsFor(scope)) {
     const chip = el('button', 'chip', formatDuration(minutes, labelOptions));
     chip.type = 'button';
@@ -693,7 +733,7 @@ function renderSheet() {
       select.addEventListener('change', () => { draft.at.date = select.value; });
       label.append(select);
       row.append(label);
-    }
+    } else {
     const label = el('label', 'field compact');
     label.append(el('span', '', 'Starts'));
     const input = el('input');
@@ -707,6 +747,7 @@ function renderSheet() {
     });
     label.append(input);
     row.append(label);
+    }
     when.append(row);
     const done = el('label', 'check');
     const box = el('input');
@@ -726,7 +767,7 @@ function renderSheet() {
     });
     when.append(unplan);
   } else if (existing) {
-    const button = el('button', 'soft-btn', scope === 'day' ? `Place at next free time ${date === today() ? 'today' : 'this day'}` : 'Place at next free time this week');
+    const button = el('button', 'soft-btn', scope === 'day' ? `Place at next free time ${date === today() ? 'today' : 'this day'}` : 'Place on the next open day');
     button.type = 'button';
     button.addEventListener('click', () => {
       if (!saveSheet({ close: false })) return;
@@ -736,7 +777,7 @@ function renderSheet() {
     when.append(button);
   } else if (sheet.placeAt) {
     const at = sheet.placeAt;
-    when.append(el('p', 'muted', scope === 'day' ? `Starts at ${formatClock(at.start)}` : `Starts ${parseDate(at.date).toLocaleDateString(undefined, { weekday: 'long' })} at ${formatClock(at.start)}`));
+    when.append(el('p', 'muted', scope === 'day' ? `Starts at ${formatClock(at.start)}` : `Starts on ${weekdayName(at.date, 'long')}`));
   }
   $('#f-reusable-row').hidden = Boolean(existing?.at || sheet.placeAt);
   $('#f-reusable').checked = draft.reusable;
@@ -778,7 +819,7 @@ function saveNewType() {
 }
 function saveSheet({ close = true } = {}) {
   const { draft, scope } = sheet;
-  const parsed = parseQuickTitle($('#f-title').value, { dayLength: dayLength() });
+  const parsed = parseQuickTitle($('#f-title').value, { dayLength: DAY_MINUTES });
   draft.title = parsed.title;
   draft.reusable = $('#f-reusable').checked;
   if (!draft.typeId) { $('#block-error').textContent = 'Make a type first: choose + New type.'; return false; }
@@ -810,7 +851,7 @@ function saveSheet({ close = true } = {}) {
   }
 }
 $('#f-title').addEventListener('input', () => {
-  const parsed = parseQuickTitle($('#f-title').value, { dayLength: dayLength() });
+  const parsed = parseQuickTitle($('#f-title').value, { dayLength: DAY_MINUTES });
   if (parsed.minutes) {
     const minutes = clamp(snap(parsed.minutes, step(sheet.scope)), step(sheet.scope), sheet.scope === 'day' ? DAY_MINUTES : 7 * DAY_MINUTES);
     if (minutes !== sheet.draft.minutes) { sheet.draft.minutes = minutes; renderSheet(); }
@@ -1023,7 +1064,7 @@ $('#zoom-out').addEventListener('click', () => setZoom(zoom[view] / 1.5));
   scroller.addEventListener('touchstart', event => {
     if (event.touches.length !== 2 || drag.active || !geometry) return;
     const x = (event.touches[0].clientX + event.touches[1].clientX) / 2;
-    const perHour = geometry.ppm * 60;
+    const perHour = geometry.ppm * geometry.unit;
     pinch = {
       distance: spread(event.touches), x, ratio: 1,
       min: Math.min(geometry.fit, geometry.base) / perHour, max: geometry.max / perHour,

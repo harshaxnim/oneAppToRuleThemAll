@@ -38,6 +38,22 @@
       </div>
       <h1 id="heading" aria-live="polite">Today</h1>
       <p class="summary" id="summary"></p>
+      <div class="week-dots" id="week-dots" hidden>
+        <span class="week-dots-label" id="week-dots-label">This week</span>
+        <ul class="dots" id="dots" aria-labelledby="week-dots-label"></ul>
+      </div>
+      <section class="week-pop" id="week-pop" aria-labelledby="pop-title" hidden>
+        <div class="pop-text">
+          <p class="pop-meta" id="pop-meta"></p>
+          <h2 id="pop-title"></h2>
+        </div>
+        <button type="button" class="icon-btn" id="pop-close" aria-label="Close">✕</button>
+        <div class="pop-actions">
+          <button type="button" class="soft-btn" id="pop-done"></button>
+          <button type="button" class="text-btn" id="pop-edit">Edit</button>
+          <button type="button" class="text-btn" id="pop-week">Open week</button>
+        </div>
+      </section>
     </header>
 
     <main id="board" role="tabpanel" aria-labelledby="tab-day">
