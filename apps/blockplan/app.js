@@ -2,8 +2,8 @@ import { createAppPlatform } from '../../lib/platform.js';
 import { APP_ID, APP_DETAILS } from './config.js';
 import {
   PALETTE, SNAP, DAY_MINUTES, dateKey, parseDate, addDays, weekDays, weekStart, windowLength, formatDuration, formatClock,
-  parseClock, clockInput, parseQuickTitle, snap, clamp, typeMap, trayBlocks, dayPlaced, weekPlaced, weekContextForDay,
-  assignLanes, dayRange, totalsByType, nextFreeStart, nextFreeWeekOffset, fromWeekOffset, weekOffset, scatterKey,
+  parseClock, clockInput, parseQuickTitle, snap, clamp, typeMap, trayBlocks, trayGroups, dayPlaced, weekPlaced, weekContextForDay,
+  assignLanes, dayRange, totalsByType, nextFreeStart, nextFreeWeekOffset, fromWeekOffset, weekOffset,
   addType, updateType, deleteType, addBlock, updateBlock, deleteBlock, duplicateBlock, placeBlock, unplaceBlock,
   exportData, parseImport, mergePlan, decodeAddLink,
 } from './model.js';
@@ -422,26 +422,35 @@ function renderTray() {
   $('#tray-hint').textContent = coarse ? 'Hold to drag, or tap to pick up' : 'Drag to the timeline, or click to pick up';
   const max = tray.clientWidth || 320;
   const ppm = trayScale();
-  for (const block of blocks) {
-    const node = el('button', `block tray-block${picked === block.id ? ' picked' : ''}`);
-    node.type = 'button';
-    node.dataset.id = block.id;
-    node.dataset.drag = 'move';
-    const type = blockStyle(node, block);
-    const trueWidth = block.minutes * ppm;
-    node.style.width = `${Math.min(max, Math.max(TRAY_MIN, trueWidth))}px`;
-    if (trueWidth > max) node.classList.add('overflow');
-    if (Math.max(TRAY_MIN, trueWidth) < 100) node.classList.add('narrow');
-    // A small, stable vertical jitter makes the tray read as a loose pile.
-    node.style.marginTop = `${(scatterKey(block.id) % 3) * 5}px`;
-    node.setAttribute('aria-pressed', String(picked === block.id));
-    node.setAttribute('aria-label', `${block.title}, ${type?.name ?? ''}, ${lengthLabel(block)}${block.reusable ? ', reusable' : ''}. ${picked === block.id ? 'Picked up.' : 'Pick up to place.'}`);
-    const title = el('span', 'b-title', block.title);
-    const meta = el('span', 'b-meta', lengthLabel(block));
-    if (block.reusable) meta.append(el('span', 'reuse', ' ↻'));
-    node.append(title, meta);
-    node.addEventListener('click', () => pick(picked === block.id ? null : block.id));
-    tray.append(node);
+  for (const { type: group, blocks: members } of trayGroups(state(), scope)) {
+    const section = el('section', 'tray-group');
+    section.style.setProperty('--c', group.color);
+    const heading = el('h3', 'tray-group-title');
+    heading.id = `tray-group-${group.id}`;
+    heading.append(el('i'), group.name, el('span', 'count', String(members.length)));
+    section.setAttribute('aria-labelledby', heading.id);
+    const row = el('div', 'tray-row');
+    section.append(heading, row);
+    tray.append(section);
+    for (const block of members) {
+      const node = el('button', `block tray-block${picked === block.id ? ' picked' : ''}`);
+      node.type = 'button';
+      node.dataset.id = block.id;
+      node.dataset.drag = 'move';
+      const type = blockStyle(node, block);
+      const trueWidth = block.minutes * ppm;
+      node.style.width = `${Math.min(max, Math.max(TRAY_MIN, trueWidth))}px`;
+      if (trueWidth > max) node.classList.add('overflow');
+      if (Math.max(TRAY_MIN, trueWidth) < 100) node.classList.add('narrow');
+      node.setAttribute('aria-pressed', String(picked === block.id));
+      node.setAttribute('aria-label', `${block.title}, ${type?.name ?? ''}, ${lengthLabel(block)}${block.reusable ? ', reusable' : ''}. ${picked === block.id ? 'Picked up.' : 'Pick up to place.'}`);
+      const title = el('span', 'b-title', block.title);
+      const meta = el('span', 'b-meta', lengthLabel(block));
+      if (block.reusable) meta.append(el('span', 'reuse', ' ↻'));
+      node.append(title, meta);
+      node.addEventListener('click', () => pick(picked === block.id ? null : block.id));
+      row.append(node);
+    }
   }
   if (!blocks.length) {
     const empty = el('div', 'tray-empty');
@@ -1024,6 +1033,11 @@ function addToPlan(incoming) {
 // “Add to plan” links (#add=…): confirm, then merge into whichever plan is open.
 let pendingAdd = null;
 try { pendingAdd = decodeAddLink(location.hash); } catch (error) { setTimeout(() => toast(error.message), 0); clearAddLink(); }
+// A link opened while the app is already on this page only changes the hash.
+window.addEventListener('hashchange', () => {
+  try { pendingAdd = decodeAddLink(location.hash); } catch (error) { toast(error.message); clearAddLink(); return; }
+  if (pendingAdd) offerAddLink();
+});
 function clearAddLink() {
   pendingAdd = null;
   // window.history: `history` in this module is the undo stack.

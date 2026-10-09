@@ -165,7 +165,12 @@ main { max-width: 1120px; margin: 0 auto; display: grid; gap: 14px; }
 .tray-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 2px 8px; }
 .tray-head h2 { font-size: 15px; margin: 0; font-weight: 650; }
 .hint { margin: 0; font-size: 13px; color: var(--muted); }
-.tray { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 10px; min-height: 60px; }
+.tray { display: grid; gap: 14px; min-height: 60px; }
+.tray-group { display: grid; gap: 6px; }
+.tray-group-title { display: flex; align-items: center; gap: 7px; margin: 0 2px; font-size: 13px; font-weight: 650; color: var(--muted); }
+.tray-group-title i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); flex: none; }
+.tray-group-title .count { font-weight: 500; font-variant-numeric: tabular-nums; }
+.tray-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 10px; }
 .tray-block { cursor: grab; flex: none; max-width: 100%; }
 .tray-block:hover { box-shadow: 0 2px 8px rgb(31 36 51 / 12%); }
 .tray-block.overflow { border-right: 2px dashed var(--c); border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
@@ -353,6 +358,10 @@ dialog::backdrop { background: rgb(22 26 40 / 42%); }
   .summary { grid-column: 1 / -1; grid-row: 2; margin: 0 0 8px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .summary > * { flex: none; }
   .timeline-card .scroller { max-height: 34svh; }
+  .tray-card { padding-top: 8px; }
+  .tray-head { margin-bottom: 4px; }
+  .tray, .tray-group { gap: 4px; }
+  .tray { row-gap: 10px; }
   .fab span { display: none; }
   .fab { padding: 0; width: 52px; justify-content: center; }
   main { gap: 10px; }

@@ -159,14 +159,13 @@ function upgradeBlock(block, settings) {
 // ---------- Queries ----------
 export function typeMap(state) { return new Map(state.types.map(type => [type.id, type])); }
 export function trayBlocks(state, scope) {
-  return state.blocks.filter(block => block.scope === scope && !block.at).sort((a, b) => scatterKey(a.id) - scatterKey(b.id));
+  return state.blocks.filter(block => block.scope === scope && !block.at);
 }
-// A stable shuffle: the tray reads as a loose pile, not sorted by type, and
-// it doesn't reshuffle on every change.
-export function scatterKey(id) {
-  let hash = 2166136261;
-  for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-  return hash >>> 0;
+// The tray groups waiting blocks by type, in the order types are listed;
+// blocks keep the order they were added.
+export function trayGroups(state, scope) {
+  const waiting = trayBlocks(state, scope);
+  return state.types.map(type => ({ type, blocks: waiting.filter(block => block.typeId === type.id) })).filter(group => group.blocks.length);
 }
 export function dayPlaced(state, date) {
   return state.blocks.filter(block => block.scope === 'day' && block.at?.date === date).sort((a, b) => a.at.start - b.at.start);

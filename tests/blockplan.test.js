@@ -183,3 +183,13 @@ test('merging adds new types and tray blocks, reuses types by name, and never du
   assert.equal(decodeAddLink('#week'), null);
   assert.throws(() => decodeAddLink('#add=bm90IGpzb24'), /damaged/);
 });
+
+test('the tray groups waiting blocks by type in type order', async () => {
+  const { trayGroups } = await import('../apps/blockplan/model.js');
+  const state = samplePlan('2026-10-09');
+  const groups = trayGroups(state, 'day');
+  assert.deepEqual(groups.map(group => group.type.name), ['Deep work', 'Meetings', 'Health', 'Admin', 'Personal']);
+  assert.deepEqual(groups[0].blocks.map(block => block.title), ['Review pull requests', 'Sketch new feature']);
+  assert.ok(groups.every(group => group.blocks.every(block => block.typeId === group.type.id && !block.at)));
+  assert.deepEqual(trayGroups(state, 'week').map(group => group.type.name), ['Deep work', 'Admin', 'Personal']);
+});

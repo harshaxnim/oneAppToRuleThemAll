@@ -326,3 +326,23 @@ test('an add link offers to add its types and blocks, then never duplicates them
   await expect(page.locator('.tray-block')).toHaveCount(9);
   expect(errors).toEqual([]);
 });
+
+test('the tray is grouped by type, and a week add link fills the week tray', async ({ page }) => {
+  const errors = await open(page, { width: 390, height: 844 });
+  await expect(page.locator('.tray-group-title')).toHaveText(['Deep work2', 'Meetings1', 'Health1', 'Admin2', 'Personal2']);
+  await expect(page.locator('.tray-group').first().locator('.tray-block .b-title')).toHaveText(['Review pull requests', 'Sketch new feature']);
+  await expect(page.getByRole('region', { name: /^Admin/ }).locator('.tray-block')).toHaveCount(2);
+  // Placing the last Meetings block removes its group.
+  await tray(page, '1:1 with Sam').click();
+  await page.getByRole('button', { name: 'Next free time' }).click();
+  await expect(page.locator('.tray-group-title')).toHaveCount(4);
+
+  await page.goto(URL + '#add=eyJ0eXBlcyI6W3siaWQiOiJqb2IiLCJuYW1lIjoiSm9iIGh1bnQiLCJjb2xvciI6IiMyYTkxOTUifSx7ImlkIjoid2l6eiIsIm5hbWUiOiJXaXp6Ym94IiwiY29sb3IiOiIjY2Y1NTkwIn1dLCJibG9ja3MiOlt7ImlkIjoidzEiLCJ0aXRsZSI6IlRlY2ggd2VlayIsInR5cGVJZCI6ImpvYiIsIm1pbnV0ZXMiOjE0NDAsInNjb3BlIjoid2VlayIsInJldXNhYmxlIjp0cnVlLCJkb25lIjpmYWxzZSwiYXQiOm51bGx9LHsiaWQiOiJ3MiIsInRpdGxlIjoiV2l6emJveCIsInR5cGVJZCI6IndpenoiLCJtaW51dGVzIjoxNDQwLCJzY29wZSI6IndlZWsiLCJyZXVzYWJsZSI6dHJ1ZSwiZG9uZSI6ZmFsc2UsImF0IjpudWxsfV19');
+  await expect(page.locator('#confirm-text')).toHaveText('Adds 2 types (Job hunt, Wizzbox) and 2 blocks to your tray. Types you already have are reused.');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Week' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('region', { name: /^Job hunt/ }).locator('.b-title')).toHaveText(['Tech week']);
+  await expect(page.getByRole('region', { name: /^Wizzbox/ }).locator('.tray-block')).toHaveAttribute('aria-label', /^Wizzbox, Wizzbox, 1 day, reusable/);
+  await noOverflow(page);
+  expect(errors).toEqual([]);
+});
