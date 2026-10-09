@@ -24,33 +24,21 @@ const trackerUrl = new URL('learning-tracker/', manifest.url).href;
 const trackerManifest = resolveAppInfo({ repository, override: TRACKER_ID, details: { ...TRACKER_DETAILS, url: trackerUrl, iconUrl: new URL('icon.svg', trackerUrl).href } });
 validateAppRecord(trackerManifest);
 const catalogue = { schemaVersion: 1, repository, template: TEMPLATE_REPOSITORY, apps: resolveCatalogueApps(manifest, HOSTED_APPS) };
-export default defineConfig({
-  base: './',
-  define: { __APP_REPOSITORY__: JSON.stringify(repository) },
-  build: { rollupOptions: { input: { directory: 'index.html', tracker: 'learning-tracker/index.html', techWeek: 'apps/sf-tech-week-oct-8/index.html', blockplan: 'apps/blockplan/index.html', notebook: 'examples/notebook/index.html', publisher: 'setup/publisher/index.html' } } },
-  plugins: [{
-    name: 'app-manifest',
-    configureServer(server) {
-      server.middlewares.use('/app-catalog.json', (_, response) => {
-        response.setHeader('Content-Type', 'application/json');
-        response.end(JSON.stringify(catalogue));
-      });
-    },
-    generateBundle(_, bundle) {
-      this.emitFile({ type: 'asset', fileName: 'app-manifest.json', source: JSON.stringify(manifest, null, 2) });
-      this.emitFile({ type: 'asset', fileName: 'app-catalog.json', source: JSON.stringify(catalogue, null, 2) });
-      this.emitFile({ type: 'asset', fileName: 'learning-tracker/app-manifest.json', source: JSON.stringify(trackerManifest, null, 2) });
-      // Cache only this app's shell and build assets. No auth, Firestore, or
-      // private API responses enter the service-worker cache.
-      const assets = Object.keys(bundle).filter(name => /\.(js|css)$/.test(name)).map(name => `../${name}`);
-      assets.push('./', './index.html', './icon.svg', './apple-touch-icon.png', './icon-192.png', './icon-512.png', './manifest.webmanifest');
-      const hash = createHash('sha256').update(JSON.stringify(bundle));
-      for (const file of ['icon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest']) {
-        hash.update(readFileSync(new URL(`./public/learning-tracker/${file}`, import.meta.url)));
-      }
-      const version = hash.digest('hex').slice(0, 16);
-      this.emitFile({ type: 'asset', fileName: 'learning-tracker/sw.js', source: `
-const PREFIX = 'learning-tracker:' + new URL('./', self.location).pathname + ':';
+// Installable apps get a scoped service worker for offline launches.
+const OFFLINE_APPS = [
+  { name: 'learning-tracker', path: 'learning-tracker/', publicDir: 'public/learning-tracker/' },
+  { name: 'blockplan', path: 'apps/blockplan/', publicDir: 'public/apps/blockplan/' },
+];
+const SHELL_FILES = ['icon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+function serviceWorker(app, bundle) {
+  const up = '../'.repeat(app.path.split('/').filter(Boolean).length);
+  const assets = Object.keys(bundle).filter(name => /\.(js|css)$/.test(name)).map(name => `${up}${name}`);
+  assets.push('./', './index.html', ...SHELL_FILES.map(file => `./${file}`));
+  const hash = createHash('sha256').update(JSON.stringify(bundle));
+  for (const file of SHELL_FILES) hash.update(readFileSync(new URL(`./${app.publicDir}${file}`, import.meta.url)));
+  const version = hash.digest('hex').slice(0, 16);
+  return `
+const PREFIX = '${app.name}:' + new URL('./', self.location).pathname + ':';
 const CACHE = PREFIX + ${JSON.stringify(version)};
 const ASSETS = ${JSON.stringify(assets)}.map(path => new URL(path, self.location).href);
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))));
@@ -71,7 +59,27 @@ self.addEventListener('fetch', event => {
     event.respondWith(caches.match(event.request, { ignoreVary: true }).then(cached => cached || fetch(event.request)));
   }
 });
-` });
+`;
+}
+export default defineConfig({
+  base: './',
+  define: { __APP_REPOSITORY__: JSON.stringify(repository) },
+  build: { rollupOptions: { input: { directory: 'index.html', tracker: 'learning-tracker/index.html', techWeek: 'apps/sf-tech-week-oct-8/index.html', blockplan: 'apps/blockplan/index.html', notebook: 'examples/notebook/index.html', publisher: 'setup/publisher/index.html' } } },
+  plugins: [{
+    name: 'app-manifest',
+    configureServer(server) {
+      server.middlewares.use('/app-catalog.json', (_, response) => {
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify(catalogue));
+      });
+    },
+    generateBundle(_, bundle) {
+      this.emitFile({ type: 'asset', fileName: 'app-manifest.json', source: JSON.stringify(manifest, null, 2) });
+      this.emitFile({ type: 'asset', fileName: 'app-catalog.json', source: JSON.stringify(catalogue, null, 2) });
+      this.emitFile({ type: 'asset', fileName: 'learning-tracker/app-manifest.json', source: JSON.stringify(trackerManifest, null, 2) });
+      // Cache only each installable app's shell and build assets. No auth,
+      // Firestore, or private API responses enter a service-worker cache.
+      for (const app of OFFLINE_APPS) this.emitFile({ type: 'asset', fileName: `${app.path}sw.js`, source: serviceWorker(app, bundle) });
     },
   }],
 });

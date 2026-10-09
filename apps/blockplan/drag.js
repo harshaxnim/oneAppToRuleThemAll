@@ -11,12 +11,14 @@ export function attachDrag(root, app) {
 
   function clearPending() {
     if (pending?.timer) clearTimeout(pending.timer);
+    pending?.el.classList.remove('pressing');
     pending = null;
   }
   function activate() {
     if (!pending) return;
     const { el, mode, id, x, y, rect } = pending;
     clearTimeout(pending.timer);
+    el.classList.remove('pressing');
     const info = app.begin({ el, mode, id });
     if (!info) { clearPending(); return; }
     active = { ...pending, info, lastX: x, lastY: y };
@@ -55,6 +57,20 @@ export function attachDrag(root, app) {
     const scroller = app.scroller();
     const rect = scroller.getBoundingClientRect();
     const { lastX: x, lastY: y } = active;
+    // Near the top or bottom of the screen (but not over the timeline),
+    // scroll the page so a long tray never strands a block out of reach.
+    const overTimeline = y >= rect.top && y <= rect.bottom;
+    const viewport = window.visualViewport?.height ?? innerHeight;
+    if (!overTimeline && active.mode !== 'resize') {
+      let delta = 0;
+      if (y < EDGE * 1.5) delta = -Math.ceil((EDGE * 1.5 - y) / 3);
+      else if (y > viewport - EDGE * 1.5) delta = Math.ceil((y - viewport + EDGE * 1.5) / 3);
+      if (delta) {
+        const before = scrollY;
+        scrollBy(0, Math.max(-20, Math.min(20, delta)));
+        if (scrollY !== before) move(x, y);
+      }
+    }
     if (y > rect.top - 80 && y < rect.bottom + 40) {
       let delta = 0;
       if (x < rect.left + EDGE) delta = -Math.ceil((rect.left + EDGE - x) / 4);
@@ -94,9 +110,13 @@ export function attachDrag(root, app) {
       event.preventDefault();
       activate();
     } else if (event.pointerType === 'touch') {
+      // Visible feedback that holding will pick the block up.
+      el.classList.add('pressing');
       pending.timer = setTimeout(activate, HOLD_MS);
     }
   });
+  // A second finger means pinch or scroll, never a drag.
+  document.addEventListener('touchstart', event => { if (event.touches.length > 1 && pending) clearPending(); }, { passive: true });
   window.addEventListener('pointermove', event => {
     if (active && event.pointerId === active.pointerId) {
       event.preventDefault();

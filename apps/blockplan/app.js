@@ -23,6 +23,7 @@ let history = [];
 let geometry = null;
 let pendingRender = false;
 let scrollIntent = 'auto';
+const zoom = { day: Number(readPref('zoom-day')) || 1, week: Number(readPref('zoom-week')) || 1 };
 let lastTypeId = readPref('type');
 let toastTimer = 0, toastUndo = false;
 let drop = null;
@@ -79,24 +80,40 @@ function computeGeometry() {
   const scroller = $('#timeline');
   const width = Math.max(280, scroller.clientWidth);
   const narrow = width < 640;
+  // Zoom multiplies a comfortable default. Zooming out stops once the whole
+  // day (or week) fits; zooming in stops when 15 minutes is about a thumb wide.
   if (view === 'day') {
     const { from, to } = dayRange(state(), date);
     const fit = width / ((to - from) / 60);
-    const perHour = narrow ? Math.max(96, fit) : Math.max(64, fit);
-    return { kind: 'day', from, to, ppm: perHour / 60, step: SNAP.day };
+    const base = narrow ? Math.max(96, fit) : Math.max(64, fit);
+    const perHour = clamp(base * zoom.day, Math.min(fit, base), 320);
+    return { kind: 'day', from, to, ppm: perHour / 60, step: SNAP.day, fit, max: 320, base };
   }
   const total = 7 * dayLength();
   const fit = width / (total / 60);
-  const perHour = narrow ? 26 : Math.max(9, fit);
-  return { kind: 'week', from: 0, to: total, ppm: perHour / 60, step: SNAP.week, week: weekDays(date) };
+  const base = narrow ? 26 : Math.max(9, fit);
+  const perHour = clamp(base * zoom.week, Math.min(fit, base), 120);
+  return { kind: 'week', from: 0, to: total, ppm: perHour / 60, step: SNAP.week, week: weekDays(date), fit, max: 120, base };
+}
+function setZoom(factor, focusX) {
+  if (!geometry || !store.ready) return;
+  const scroller = $('#timeline');
+  const rect = scroller.getBoundingClientRect();
+  const x = focusX ?? rect.left + scroller.clientWidth / 2;
+  // Keep the time under the fingers (or the middle of the view) in place.
+  const anchor = (x - rect.left + scroller.scrollLeft) / geometry.ppm + geometry.from;
+  const { fit, base, max } = geometry;
+  zoom[view] = clamp(factor, Math.min(fit, base) / base, max / base);
+  writePref(`zoom-${view}`, String(zoom[view]));
+  scrollIntent = { anchor, x: x - rect.left };
+  render();
 }
 // The tray is a zoomed-in view of the same scale: lengths stay proportional to
 // each other, but short blocks remain readable. Dragging shows the true
 // timeline length.
 function trayScale() {
   const narrow = $('#timeline').clientWidth < 640;
-  const perHour = view === 'day' ? (narrow ? 150 : 132) : (narrow ? 40 : 36);
-  return Math.max(geometry.ppm, perHour / 60);
+  return (view === 'day' ? (narrow ? 150 : 132) : (narrow ? 40 : 36)) / 60;
 }
 // Placed items as offsets on the current axis.
 function placedItems() {
@@ -135,8 +152,13 @@ function render() {
   renderTimeline();
   renderTray();
   renderPickbar();
-  if (scrollIntent === 'auto') { scrollToFocus(); scrollIntent = 'keep'; }
+  if (scrollIntent === 'auto') scrollToFocus();
+  else if (typeof scrollIntent === 'object') scroller.scrollLeft = (scrollIntent.anchor - geometry.from) * geometry.ppm - scrollIntent.x;
   else scroller.scrollLeft = keepScroll;
+  scrollIntent = 'keep';
+  const { fit, base, max } = geometry;
+  $('#zoom-out').disabled = geometry.ppm * 60 <= Math.min(fit, base) + 0.01;
+  $('#zoom-in').disabled = geometry.ppm * 60 >= max - 0.01;
   if ($('#menu-dialog').open) renderMenu();
 }
 function renderStatus() {
@@ -166,6 +188,10 @@ function renderHeader() {
     tag = { 0: 'This week', 1: 'Next week', [-1]: 'Last week' }[delta] ?? '';
   }
   if (tag) heading.append(' ', el('span', 'tag', tag));
+  $('#free-time').textContent = freeTimeNote();
+  $('#stuck-date').textContent = view === 'day'
+    ? current.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+    : heading.firstChild.textContent;
   $('#today').setAttribute('aria-label', view === 'day' ? 'Go to today' : 'Go to this week');
   $('#today').disabled = view === 'day' ? date === today() : weekStart(date) === weekStart(today());
   // Summary doubles as the color legend.
@@ -186,6 +212,20 @@ function renderHeader() {
     chip.append(el('i'), `${type.name} ${formatDuration(minutes)}`);
     summary.append(chip);
   }
+}
+// Unplanned time inside the planning hours, counting overlaps once.
+function freeTimeNote() {
+  const length = dayLength() * (view === 'day' ? 1 : 7);
+  const from = view === 'day' ? state().settings.dayStart : 0;
+  const spans = placedItems().map(item => [Math.max(item.start, from), Math.min(item.end, from + length)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
+  let covered = 0, end = -Infinity;
+  for (const [a, b] of spans) {
+    if (b <= end) continue;
+    covered += b - Math.max(a, end);
+    end = b;
+  }
+  const free = length - covered;
+  return free ? `${formatDuration(free)} free in your planning hours` : 'Planning hours are full';
 }
 function blockStyle(node, block) {
   const type = types().get(block.typeId);
@@ -311,7 +351,8 @@ function placedBlock(item, lane) {
   node.style.left = `${(item.start - geometry.from) * geometry.ppm}px`;
   node.style.width = `${widthPx}px`;
   node.style.top = `${lane * LANE + 4}px`;
-  if (widthPx < 44) node.classList.add('tiny');
+  if (widthPx < 40) node.classList.add('tiny');
+  else if (widthPx < 92) node.classList.add('narrow');
   const when = timeLabel(item.start, item.end);
   node.setAttribute('aria-label', `${block.done ? 'Done: ' : ''}${block.title}, ${type?.name ?? ''}, ${when}, ${lengthLabel(block)}`);
   node.setAttribute('aria-describedby', 'hint-keys');
@@ -346,6 +387,7 @@ function renderTray() {
     const trueWidth = block.minutes * ppm;
     node.style.width = `${Math.min(max, Math.max(TRAY_MIN, trueWidth))}px`;
     if (trueWidth > max) node.classList.add('overflow');
+    if (Math.max(TRAY_MIN, trueWidth) < 100) node.classList.add('narrow');
     // A small, stable vertical jitter makes the tray read as a loose pile.
     node.style.marginTop = `${(scatterKey(block.id) % 3) * 5}px`;
     node.setAttribute('aria-pressed', String(picked === block.id));
@@ -967,6 +1009,117 @@ setInterval(() => {
   if (!document.hidden && store.ready && !drag.active && !document.querySelector('dialog[open]')) render();
 }, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && store.ready) render(); });
+
+// ---------- Phone niceties ----------
+// Zoom: buttons, two-finger pinch on the timeline, and trackpad pinch.
+$('#zoom-in').addEventListener('click', () => setZoom(zoom[view] * 1.5));
+$('#zoom-out').addEventListener('click', () => setZoom(zoom[view] / 1.5));
+{
+  const scroller = $('#timeline');
+  // While pinching, scale the drawn timeline (re-rendering would detach the
+  // element under the fingers); apply the real zoom when the fingers lift.
+  let pinch = null;
+  const spread = touches => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+  scroller.addEventListener('touchstart', event => {
+    if (event.touches.length !== 2 || drag.active || !geometry) return;
+    const x = (event.touches[0].clientX + event.touches[1].clientX) / 2;
+    const perHour = geometry.ppm * 60;
+    pinch = {
+      distance: spread(event.touches), x, ratio: 1,
+      min: Math.min(geometry.fit, geometry.base) / perHour, max: geometry.max / perHour,
+      origin: x - scroller.getBoundingClientRect().left + scroller.scrollLeft,
+    };
+    $('#track').style.transformOrigin = `${pinch.origin}px 0`;
+  }, { passive: true });
+  scroller.addEventListener('touchmove', event => {
+    if (!pinch || event.touches.length !== 2) return;
+    event.preventDefault();
+    pinch.ratio = clamp(spread(event.touches) / pinch.distance, pinch.min, pinch.max);
+    $('#track').style.transform = `scaleX(${pinch.ratio})`;
+  }, { passive: false });
+  const endPinch = event => {
+    if (!pinch || event.touches.length >= 2) return;
+    const { ratio, x } = pinch;
+    pinch = null;
+    $('#track').style.transform = '';
+    if (Math.abs(ratio - 1) > 0.02) setZoom(zoom[view] * ratio, x);
+  };
+  scroller.addEventListener('touchend', endPinch);
+  scroller.addEventListener('touchcancel', endPinch);
+  scroller.addEventListener('wheel', event => {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    setZoom(zoom[view] * Math.exp(-event.deltaY / 120), event.clientX);
+  }, { passive: false });
+}
+// Swipe the header sideways to change day or week.
+{
+  let start = null;
+  const header = $('.top');
+  header.addEventListener('touchstart', event => {
+    start = event.touches.length === 1 && !event.target.closest('.seg') ? { x: event.touches[0].clientX, y: event.touches[0].clientY, t: Date.now() } : null;
+  }, { passive: true });
+  header.addEventListener('touchend', event => {
+    if (!start || !store.ready) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+    if (Math.abs(dx) > 56 && Math.abs(dy) < Math.abs(dx) * 0.6 && Date.now() - start.t < 700) {
+      shiftDate(dx < 0 ? 1 : -1);
+      $('#heading').classList.remove('slide-left', 'slide-right');
+      void $('#heading').offsetWidth;
+      $('#heading').classList.add(dx < 0 ? 'slide-left' : 'slide-right');
+    }
+    start = null;
+  });
+}
+// The timeline pins under the top edge on phones; show the date while pinned.
+if ('IntersectionObserver' in window) {
+  new IntersectionObserver(([entry]) => {
+    $('#timeline-card').classList.toggle('stuck', !entry.isIntersecting && entry.boundingClientRect.top < 0);
+  }).observe($('#stick-sentinel'));
+}
+// Keep sheets above the software keyboard (iOS overlays it on the page).
+if (window.visualViewport) {
+  const fit = () => {
+    const viewport = window.visualViewport;
+    const covered = Math.max(0, innerHeight - viewport.height - viewport.offsetTop);
+    document.documentElement.style.setProperty('--keyboard', `${covered}px`);
+    document.documentElement.style.setProperty('--viewport', `${viewport.height}px`);
+  };
+  visualViewport.addEventListener('resize', fit);
+  visualViewport.addEventListener('scroll', fit);
+  fit();
+}
+document.addEventListener('focusin', event => {
+  if (event.target.matches?.('dialog input, dialog select')) setTimeout(() => event.target.scrollIntoView({ block: 'nearest' }), 250);
+});
+// Swipe a sheet down by its header to close it.
+for (const dialog of document.querySelectorAll('dialog')) {
+  const head = dialog.querySelector('.sheet-head');
+  let swipe = null;
+  head.addEventListener('pointerdown', event => {
+    if (event.pointerType !== 'touch' || event.target.closest('button')) return;
+    swipe = { y: event.clientY, id: event.pointerId, dy: 0 };
+    head.setPointerCapture(event.pointerId);
+  });
+  head.addEventListener('pointermove', event => {
+    if (!swipe || event.pointerId !== swipe.id) return;
+    swipe.dy = Math.max(0, event.clientY - swipe.y);
+    dialog.style.transform = `translateY(${swipe.dy}px)`;
+  });
+  const release = () => {
+    if (!swipe) return;
+    const close = swipe.dy > 90;
+    swipe = null;
+    dialog.style.transform = '';
+    if (close) dialog.close();
+  };
+  head.addEventListener('pointerup', release);
+  head.addEventListener('pointercancel', release);
+}
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => toast('Offline setup did not finish. Reopen while online to retry.'));
+}
 
 render();
 // Undo never crosses accounts: a device plan must not be restored over an account plan.
