@@ -1,6 +1,6 @@
 // Pure planning model: no DOM, no storage. Times are minutes since midnight;
 // dates are local YYYY-MM-DD keys so a plan never shifts with time zones.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const DAY_MINUTES = 1440;
 // Day blocks move in 15 minute steps; week blocks are whole days.
 export const SNAP = { day: 15, week: 1440 };
@@ -145,7 +145,8 @@ export function validateState(raw, { strict = false } = {}) {
   const typeIds = new Set(types.map(type => type.id));
   const settings = validateSettings(raw.settings);
   const blocks = keep(raw.blocks, block => validateBlock(upgradeBlock(block, settings), typeIds)).filter((block, index, all) => all.findIndex(other => other.id === block.id) === index);
-  return { schemaVersion: SCHEMA_VERSION, settings, types, blocks };
+  const state = { schemaVersion: SCHEMA_VERSION, settings, types, blocks };
+  return Number(raw.schemaVersion) < 3 ? withoutSamples(state) : state;
 }
 // Version 1 sized week blocks in planning hours. They become whole days,
 // rounding up, so nothing planned shrinks to zero.
@@ -296,38 +297,32 @@ export function placeBlock(state, id, at) {
 export function unplaceBlock(state, id) { return updateBlock(state, id, { at: null, done: false }); }
 
 // ---------- First run ----------
-export function seedState(today) {
-  const t = { deep: newId(), meet: newId(), health: newId(), admin: newId(), life: newId() };
-  const types = [
-    { id: t.deep, name: 'Deep work', color: '#e0684b' },
-    { id: t.meet, name: 'Meetings', color: '#3b84c9' },
-    { id: t.health, name: 'Health', color: '#3f9b6b' },
-    { id: t.admin, name: 'Admin', color: '#d9962b' },
-    { id: t.life, name: 'Personal', color: '#8e5bc9' },
-  ];
-  const monday = weekStart(today);
-  const block = (title, typeId, minutes, extra = {}) => ({ id: newId(), title, typeId, minutes, scope: 'day', reusable: false, done: false, at: null, ...extra });
-  const blocks = [
-    block('Write project brief', t.deep, 120, { at: { date: today, start: 9 * 60 } }),
-    block('Team standup', t.meet, 30, { at: { date: today, start: 11 * 60 + 30 } }),
-    block('Lunch walk', t.health, 45, { at: { date: today, start: 12 * 60 + 30 } }),
-    block('Inbox zero', t.admin, 30, { reusable: true }),
-    block('Review pull requests', t.deep, 60),
-    block('1:1 with Sam', t.meet, 30),
-    block('Gym', t.health, 60, { reusable: true }),
-    block('Pay bills', t.admin, 15),
-    block('Call parents', t.life, 45),
-    block('Read a chapter', t.life, 30),
-    block('Sketch new feature', t.deep, 90),
-    block('Product sprint', t.deep, 2 * DAY_MINUTES, { scope: 'week', at: { date: monday, start: 0 } }),
-    block('Errands', t.admin, DAY_MINUTES, { scope: 'week', at: { date: addDays(monday, 5), start: 0 } }),
-    block('Long run', t.health, DAY_MINUTES, { scope: 'week', at: { date: today, start: 0 } }),
-    block('Plan next quarter', t.deep, DAY_MINUTES, { scope: 'week' }),
-    block('Dinner with friends', t.life, DAY_MINUTES, { scope: 'week' }),
-    block('Weekend trip', t.life, 2 * DAY_MINUTES, { scope: 'week' }),
-    block('Expenses', t.admin, DAY_MINUTES, { scope: 'week' }),
-  ];
-  return validateState({ schemaVersion: SCHEMA_VERSION, settings: { ...DEFAULT_SETTINGS }, types, blocks }, { strict: true });
+// A new plan starts with a few general types and no blocks.
+export const STARTER_TYPES = [
+  { name: 'Deep work', color: '#e0684b' },
+  { name: 'Meetings', color: '#3b84c9' },
+  { name: 'Health', color: '#3f9b6b' },
+  { name: 'Admin', color: '#d9962b' },
+  { name: 'Personal', color: '#8e5bc9' },
+];
+export function starterState() {
+  return { schemaVersion: SCHEMA_VERSION, settings: { ...DEFAULT_SETTINGS }, types: STARTER_TYPES.map(type => ({ id: newId(), ...type })), blocks: [] };
+}
+// Earlier versions filled new plans with example blocks. Plans saved before
+// version 3 drop those (matched by name, scope, and type name); anything the
+// person created stays.
+export const SAMPLE_BLOCKS = [
+  ['Write project brief', 'day', 'Deep work'], ['Team standup', 'day', 'Meetings'], ['Lunch walk', 'day', 'Health'],
+  ['Inbox zero', 'day', 'Admin'], ['Review pull requests', 'day', 'Deep work'], ['1:1 with Sam', 'day', 'Meetings'],
+  ['Gym', 'day', 'Health'], ['Pay bills', 'day', 'Admin'], ['Call parents', 'day', 'Personal'], ['Read a chapter', 'day', 'Personal'],
+  ['Sketch new feature', 'day', 'Deep work'], ['Product sprint', 'week', 'Deep work'], ['Errands', 'week', 'Admin'],
+  ['Long run', 'week', 'Health'], ['Plan next quarter', 'week', 'Deep work'], ['Dinner with friends', 'week', 'Personal'],
+  ['Weekend trip', 'week', 'Personal'], ['Expenses', 'week', 'Admin'],
+];
+const SAMPLE_KEYS = new Set(SAMPLE_BLOCKS.map(entry => entry.join('\u0000')));
+function withoutSamples(state) {
+  const names = new Map(state.types.map(type => [type.id, type.name]));
+  return { ...state, blocks: state.blocks.filter(block => !SAMPLE_KEYS.has([block.title, block.scope, names.get(block.typeId)].join('\u0000'))) };
 }
 
 export function exportData(state) {

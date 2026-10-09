@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { useSamplePlan } from '../fixtures/blockplan-sample.js';
 const URL = '/apps/blockplan/';
 const NOW = new Date(2026, 9, 9, 10, 20);
 const tray = (page, name) => page.locator('.tray-block').filter({ has: page.locator('.b-title', { hasText: new RegExp(`^${name}$`) }) });
@@ -10,6 +11,7 @@ async function phone(browser, viewport = { width: 390, height: 844 }) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.clock.setFixedTime(NOW);
+  await useSamplePlan(page, '2026-10-09');
   await page.goto(URL);
   await expect(tray(page, 'Gym')).toBeVisible();
   // A realistically long tray: more blocks than fit on one screen.

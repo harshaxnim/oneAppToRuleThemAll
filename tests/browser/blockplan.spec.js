@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { useSamplePlan } from '../fixtures/blockplan-sample.js';
 const URL = '/apps/blockplan/';
 // A fixed Friday morning keeps the seeded plan and scroll position predictable.
 const NOW = new Date(2026, 9, 9, 8, 0);
@@ -7,6 +8,7 @@ async function open(page, viewport) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.clock.setFixedTime(NOW);
+  await useSamplePlan(page, '2026-10-09');
   if (viewport) await page.setViewportSize(viewport);
   await page.goto(URL);
   await expect(page.locator('.tray-block').first()).toBeVisible();
@@ -250,5 +252,50 @@ test('settings: rename and delete a type with undo; planning hours change the ax
   await page.locator('#menu-dialog').getByRole('button', { name: 'Close' }).click();
   await expect(page.locator('.tick').first()).toHaveText('9a');
   await noOverflow(page);
+  expect(errors).toEqual([]);
+});
+
+test('first visit: an empty plan with starter types and helpful empty states', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.clock.setFixedTime(NOW);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(URL);
+  await expect(page.locator('.tray-empty')).toContainText('Add things you want to do');
+  await expect(page.locator('.block')).toHaveCount(0);
+  await expect(page.locator('#summary')).toHaveText('Nothing planned for this day yet.');
+  await expect(page.locator('.lanes-empty')).toHaveText('Click a time to add a block there.');
+  await page.getByRole('tab', { name: 'Week' }).click();
+  await expect(page.locator('.tray-empty')).toContainText('Add things for this week');
+  await page.getByRole('tab', { name: 'Day' }).click();
+  await page.locator('.tray-empty').getByRole('button', { name: 'New block' }).click();
+  await expect(page.getByRole('radio')).toHaveCount(5);
+  await page.getByLabel('Name', { exact: true }).fill('First thing 30m');
+  await page.getByRole('button', { name: 'Add to tray' }).click();
+  await expect(tray(page, 'First thing')).toContainText('30m');
+  await expect(page.locator('.tray-empty')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('a plan saved by an earlier version opens without the example blocks', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.clock.setFixedTime(NOW);
+  await useSamplePlan(page, '2026-10-09');
+  // Mark the stored plan as older and add one block of the person's own.
+  await page.addInitScript(() => {
+    const key = 'blockplan:v1:guest';
+    const record = JSON.parse(localStorage.getItem(key));
+    if (record.state.schemaVersion !== 3) return;
+    record.state.schemaVersion = 2;
+    record.state.blocks.push({ id: 'mine', title: 'Dentist', typeId: record.state.types[2].id, minutes: 60, scope: 'day', at: { date: '2026-10-09', start: 900 } });
+    localStorage.setItem(key, JSON.stringify(record));
+  });
+  await page.goto(URL);
+  await expect(page.locator('.placed')).toHaveCount(1);
+  await expect(placed(page, 'Dentist')).toHaveCount(1);
+  await expect(page.locator('.tray-block')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Week' }).click();
+  await expect(page.locator('.block')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

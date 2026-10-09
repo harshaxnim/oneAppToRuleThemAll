@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseQuickTitle, formatDuration, formatClock, weekStart, weekDays, addDays, assignLanes, seedState,
+  parseQuickTitle, formatDuration, formatClock, weekStart, weekDays, addDays, assignLanes, starterState, SAMPLE_BLOCKS,
   validateState, placeBlock, unplaceBlock, addBlock, addType, deleteType, nextFreeStart, nextFreeWeekOffset,
   trayBlocks, dayPlaced, weekPlaced, weekContextForDay, dayRange, parseImport, exportData, duplicateBlock,
 } from '../apps/blockplan/model.js';
+import { samplePlan } from './fixtures/blockplan-sample.js';
+const seedState = samplePlan;
 
 test('quick titles carry a duration', () => {
   assert.deepEqual(parseQuickTitle('Write report 90m'), { title: 'Write report', minutes: 90 });
@@ -90,7 +92,7 @@ test('hour-based week blocks from the first version become whole days', () => {
     { id: 'c', title: 'Offsite', typeId, minutes: 20 * 60, scope: 'week', at: null },
   ] };
   const upgraded = validateState(old);
-  assert.equal(upgraded.schemaVersion, 2);
+  assert.equal(upgraded.schemaVersion, 3);
   assert.deepEqual(upgraded.blocks.map(block => [block.minutes / 1440, block.at]), [[1, { date: '2026-10-05', start: 0 }], [1, null], [2, null]]);
 });
 
@@ -129,4 +131,28 @@ test('types and blocks are created through validated commands', () => {
   assert.equal(copy.state.blocks.filter(item => item.title === 'Flashcards').length, 2);
   const removed = deleteType(copy.state, added.type.id);
   assert.equal(removed.blocks.some(item => item.typeId === added.type.id), false);
+});
+
+test('a new plan has starter types and no blocks', () => {
+  const state = starterState();
+  assert.deepEqual(state.types.map(type => type.name), ['Deep work', 'Meetings', 'Health', 'Admin', 'Personal']);
+  assert.deepEqual(state.blocks, []);
+  assert.deepEqual(validateState(state), state);
+});
+
+test('plans saved before version 3 lose only the untouched example blocks', () => {
+  const sample = samplePlan('2026-10-09');
+  const deep = sample.types.find(type => type.name === 'Deep work').id;
+  const mine = [
+    { id: 'mine1', title: 'Write thesis chapter', typeId: deep, minutes: 120, scope: 'day', at: { date: '2026-10-09', start: 600 } },
+    { id: 'mine2', title: 'Gym', typeId: deep, minutes: 60, scope: 'day', at: null },
+    { id: 'mine3', title: 'Product sprint', typeId: deep, minutes: 1440, scope: 'day', at: null },
+  ];
+  const old = { ...sample, schemaVersion: 2, blocks: [...sample.blocks, ...mine] };
+  const cleaned = validateState(old);
+  assert.deepEqual(cleaned.blocks.map(block => block.id), ['mine1', 'mine2', 'mine3'], 'same name with another type or scope is kept');
+  assert.equal(cleaned.types.length, 5);
+  assert.equal(SAMPLE_BLOCKS.length, 18);
+  // Version 3 plans are never filtered, even if names match.
+  assert.equal(validateState(sample).blocks.length, sample.blocks.length);
 });

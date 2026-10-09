@@ -351,7 +351,10 @@ function renderTimeline() {
   geometry.count = count;
   for (const item of items) area.append(placedBlock(item, lanes.get(item.block.id)));
   if (!items.length) {
-    const empty = el('p', 'lanes-empty', coarse ? 'Hold a block below and drag it here, or tap one to pick it up.' : 'Drag a block from below onto the timeline.');
+    const waiting = trayBlocks(state(), view).length > 0;
+    const empty = el('p', 'lanes-empty', !waiting
+      ? `${coarse ? 'Tap' : 'Click'} ${view === 'day' ? 'a time' : 'a day'} to add a block there.`
+      : coarse ? 'Hold a block below and drag it here, or tap one to pick it up.' : 'Drag a block from below onto the timeline.');
     empty.style.left = `${Math.max(8, $('#timeline').scrollLeft + 8)}px`;
     area.append(empty);
   }
@@ -441,7 +444,10 @@ function renderTray() {
   }
   if (!blocks.length) {
     const empty = el('div', 'tray-empty');
-    empty.append(el('p', '', scope === 'day' ? 'Everything is planned.' : 'Every week block is planned.'));
+    const none = !state().blocks.some(block => block.scope === scope);
+    empty.append(el('p', '', none
+      ? (scope === 'day' ? 'Add things you want to do. They wait here until you place them.' : 'Add things for this week, like a trip or a project push.')
+      : (scope === 'day' ? 'Everything is planned.' : 'Every week block is planned.')));
     const add = el('button', 'soft-btn', scope === 'day' ? 'New block' : 'New week block');
     add.type = 'button';
     add.addEventListener('click', () => openBlockSheet({}));

@@ -1,4 +1,4 @@
-import { validateState, seedState, dateKey, SCHEMA_VERSION } from './model.js';
+import { validateState, starterState, SCHEMA_VERSION } from './model.js';
 // Same contract as Learning Tracker: every change lands on this device first;
 // signed-in plans then sync to the account's private namespace. Guest and
 // account copies are cached under separate keys.
@@ -49,7 +49,7 @@ export class PlanStore {
       return;
     }
     if (!this.uid) {
-      this.state = cached?.state ?? seedState(dateKey(new Date()));
+      this.state = cached?.state ?? starterState();
       this.ready = true;
       if (this.writeCache(false)) this.setStatus(this.guestStatus());
       return;
@@ -66,8 +66,8 @@ export class PlanStore {
       // An existing account plan wins over the device's guest plan; creation is
       // transactional so two first visits cannot overwrite each other.
       let guest;
-      try { guest = this.readCache(null)?.state; } catch { /* Fall back to the sample plan. */ }
-      guest ??= seedState(dateKey(new Date()));
+      try { guest = this.readCache(null)?.state; } catch { /* Fall back to a new plan. */ }
+      guest ??= starterState();
       const state = await this.platform.getStorage().transaction(async tx => {
         const document = await tx.get('data/state');
         if (document) return validateState(document.value);

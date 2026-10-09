@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { useSamplePlan } from '../fixtures/blockplan-sample.js';
+import { dateKey } from '../../apps/blockplan/model.js';
 test('Blockplan installs a scoped worker and plans offline at the Pages subpath', async ({ page, context }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await useSamplePlan(page, dateKey(new Date()));
   await page.goto('apps/blockplan/');
   await expect(page.locator('.tray-block').first()).toBeVisible();
   const manifest = await page.evaluate(async () => {
