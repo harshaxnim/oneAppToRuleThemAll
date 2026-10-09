@@ -210,7 +210,9 @@ dialog {
   box-shadow: 0 -10px 40px rgb(31 36 51 / 20%); overflow: hidden;
 }
 dialog[open] { display: flex; flex-direction: column; }
-dialog > form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+/* Size from content and shrink to the sheet's max-height. A 0% basis (flex: 1)
+   collapses the form to nothing in Safari because the sheet has no fixed height. */
+dialog > form { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
 @media (min-width: 640px) and (min-height: 600px) { dialog { margin: auto; border-radius: 20px; } .grabber { display: none; } }
 dialog::backdrop { background: rgb(22 26 40 / 42%); }
 @media (prefers-reduced-motion: no-preference) {
@@ -220,7 +222,7 @@ dialog::backdrop { background: rgb(22 26 40 / 42%); }
 .sheet-head { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 0 20px; flex: none; touch-action: none; }
 .grabber { position: absolute; top: 6px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--line); }
 .sheet-head h2 { font-size: 18px; margin: 0; font-weight: 650; }
-.sheet-body { padding: 8px 20px 12px; overflow-y: auto; display: grid; gap: 16px; overscroll-behavior: contain; min-height: 0; }
+.sheet-body { flex: 0 1 auto; padding: 8px 20px 12px; overflow-y: auto; display: grid; gap: 16px; overscroll-behavior: contain; min-height: 0; }
 .sheet-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none;
   padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface);

@@ -140,3 +140,27 @@ test('picking up a block keeps the timeline where it was', async ({ browser }) =
   expect(errors).toEqual([]);
   await context.close();
 });
+
+test('every sheet has real height and never relies on a 0% flex basis (Safari collapses it)', async ({ browser }) => {
+  const { context, page, errors } = await phone(browser, { width: 390, height: 664 });
+  const check = async (open, dialog, action) => {
+    await open();
+    const sheet = page.locator(dialog);
+    await expect(sheet).toBeVisible();
+    await page.waitForTimeout(300);
+    const facts = await sheet.evaluate(node => ({
+      height: node.getBoundingClientRect().height,
+      bases: [node.querySelector(':scope > form'), node.querySelector('.sheet-body')].filter(Boolean).map(child => getComputedStyle(child).flexBasis),
+    }));
+    expect(facts.height).toBeGreaterThan(150);
+    expect(facts.bases.filter(basis => basis.endsWith('%') || basis === '0px')).toEqual([]);
+    await expect(sheet.locator(action)).toBeInViewport();
+    await sheet.locator('[data-close]').first().tap();
+    await expect(sheet).toBeHidden();
+  };
+  await check(() => page.locator('.placed').first().tap(), '#block-dialog', '#f-save');
+  await check(() => page.getByRole('button', { name: 'New block' }).tap(), '#block-dialog', '#f-save');
+  await check(() => page.getByRole('button', { name: 'Menu' }).tap(), '#menu-dialog', '[data-close]');
+  expect(errors).toEqual([]);
+  await context.close();
+});
