@@ -333,3 +333,56 @@ export function parseImport(text) {
   try { raw = JSON.parse(text); } catch { throw new Error('That file is not valid JSON.'); }
   return validateState(raw, { strict: true });
 }
+
+// Adds another plan's types and blocks to this one instead of replacing it.
+// Types are matched by name (case-insensitive) and reused; blocks get new IDs,
+// go to the tray, and are skipped when the tray already has the same block.
+export function mergePlan(state, incoming) {
+  const types = [...state.types];
+  const byName = new Map(types.map(type => [type.name.toLowerCase(), type]));
+  const typeIds = new Map();
+  const addedTypes = [];
+  for (const type of incoming.types) {
+    let match = byName.get(type.name.toLowerCase());
+    if (!match) {
+      if (types.length >= LIMITS.types) throw new Error(`A plan can have up to ${LIMITS.types} types.`);
+      match = { ...type, id: newId() };
+      types.push(match);
+      byName.set(match.name.toLowerCase(), match);
+      addedTypes.push(match);
+    }
+    typeIds.set(type.id, match.id);
+  }
+  const blocks = [...state.blocks];
+  const waiting = new Set(blocks.filter(block => !block.at).map(block => [block.title.toLowerCase(), block.scope, block.typeId].join('\u0000')));
+  const addedBlocks = [];
+  for (const block of incoming.blocks) {
+    const typeId = typeIds.get(block.typeId);
+    const key = [block.title.toLowerCase(), block.scope, typeId].join('\u0000');
+    if (waiting.has(key)) continue;
+    if (blocks.length >= LIMITS.blocks) throw new Error('This plan is full. Delete old blocks to add more.');
+    const copy = { ...block, id: newId(), typeId, at: null, done: false };
+    blocks.push(copy);
+    waiting.add(key);
+    addedBlocks.push(copy);
+  }
+  return { state: validateState({ ...state, types, blocks }, { strict: true }), addedTypes, addedBlocks };
+}
+// “Add to plan” links carry a plan after #add= (base64url JSON). The fragment
+// never reaches a server, so the contents stay between the sender and the app.
+export function encodeAddLink(plan) {
+  const bytes = new TextEncoder().encode(JSON.stringify({ types: plan.types, blocks: plan.blocks }));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+export function decodeAddLink(hash) {
+  const match = /^#?add=([A-Za-z0-9_-]{1,20000})$/.exec(hash ?? '');
+  if (!match) return null;
+  let raw;
+  try {
+    const binary = atob(match[1].replace(/-/g, '+').replace(/_/g, '/'));
+    raw = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, char => char.charCodeAt(0))));
+  } catch { throw new Error('That add link is damaged. Ask for a new one.'); }
+  return validateState({ ...raw, schemaVersion: SCHEMA_VERSION }, { strict: true });
+}

@@ -299,3 +299,30 @@ test('a plan saved by an earlier version opens without the example blocks', asyn
   await expect(page.locator('.block')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('an add link offers to add its types and blocks, then never duplicates them', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.clock.setFixedTime(NOW);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const link = URL + '#add=eyJ0eXBlcyI6W3siaWQiOiJqb2IiLCJuYW1lIjoiSm9iIGh1bnQiLCJjb2xvciI6IiMyYTkxOTUifSx7ImlkIjoibGVhcm4iLCJuYW1lIjoiTGVhcm4iLCJjb2xvciI6IiM1YjY1Y2MifSx7ImlkIjoid2l6eiIsIm5hbWUiOiJXaXp6Ym94IiwiY29sb3IiOiIjY2Y1NTkwIn0seyJpZCI6ImNhcmUiLCJuYW1lIjoiUGVyc29uYWwgY2FyZSIsImNvbG9yIjoiIzdmOWEzNSJ9XSwiYmxvY2tzIjpbeyJpZCI6ImIxIiwidGl0bGUiOiJBcHBseSIsInR5cGVJZCI6ImpvYiIsIm1pbnV0ZXMiOjYwLCJzY29wZSI6ImRheSIsInJldXNhYmxlIjp0cnVlLCJkb25lIjpmYWxzZSwiYXQiOm51bGx9LHsiaWQiOiJiMiIsInRpdGxlIjoiRXZlbnRzIiwidHlwZUlkIjoiam9iIiwibWludXRlcyI6MTIwLCJzY29wZSI6ImRheSIsInJldXNhYmxlIjp0cnVlLCJkb25lIjpmYWxzZSwiYXQiOm51bGx9LHsiaWQiOiJiMyIsInRpdGxlIjoiU2ltdWxhdGlvbiBmb3VuZGF0aW9ucyIsInR5cGVJZCI6ImxlYXJuIiwibWludXRlcyI6OTAsInNjb3BlIjoiZGF5IiwicmV1c2FibGUiOnRydWUsImRvbmUiOmZhbHNlLCJhdCI6bnVsbH0seyJpZCI6ImI0IiwidGl0bGUiOiJWZWN0b3IgY2FsY3VsdXMiLCJ0eXBlSWQiOiJsZWFybiIsIm1pbnV0ZXMiOjYwLCJzY29wZSI6ImRheSIsInJldXNhYmxlIjp0cnVlLCJkb25lIjpmYWxzZSwiYXQiOm51bGx9LHsiaWQiOiJiNSIsInRpdGxlIjoiTnVtZXJpY2FsIGxpbmVhciBhbGdlYnJhIiwidHlwZUlkIjoibGVhcm4iLCJtaW51dGVzIjo2MCwic2NvcGUiOiJkYXkiLCJyZXVzYWJsZSI6dHJ1ZSwiZG9uZSI6ZmFsc2UsImF0IjpudWxsfSx7ImlkIjoiYjYiLCJ0aXRsZSI6IkhhbmRsZSBmZWVkYmFjayIsInR5cGVJZCI6IndpenoiLCJtaW51dGVzIjo2MCwic2NvcGUiOiJkYXkiLCJyZXVzYWJsZSI6dHJ1ZSwiZG9uZSI6ZmFsc2UsImF0IjpudWxsfSx7ImlkIjoiYjciLCJ0aXRsZSI6IkZvb2QiLCJ0eXBlSWQiOiJjYXJlIiwibWludXRlcyI6NjAsInNjb3BlIjoiZGF5IiwicmV1c2FibGUiOnRydWUsImRvbmUiOmZhbHNlLCJhdCI6bnVsbH0seyJpZCI6ImI4IiwidGl0bGUiOiJDaGlsbCIsInR5cGVJZCI6ImNhcmUiLCJtaW51dGVzIjo2MCwic2NvcGUiOiJkYXkiLCJyZXVzYWJsZSI6dHJ1ZSwiZG9uZSI6ZmFsc2UsImF0IjpudWxsfSx7ImlkIjoiYjkiLCJ0aXRsZSI6IldvcmtvdXQiLCJ0eXBlSWQiOiJjYXJlIiwibWludXRlcyI6NjAsInNjb3BlIjoiZGF5IiwicmV1c2FibGUiOnRydWUsImRvbmUiOmZhbHNlLCJhdCI6bnVsbH1dfQ';
+  await page.goto(link);
+  await expect(page.locator('#confirm-dialog')).toBeVisible();
+  await expect(page.locator('#confirm-text')).toHaveText('Adds 4 types (Job hunt, Learn, Wizzbox, Personal care) and 9 blocks to your tray. Types you already have are reused.');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.locator('#toast-text')).toHaveText('Added 9 blocks and 4 types');
+  expect(new globalThis.URL(page.url()).hash, 'the link is cleared after use').toBe('');
+  await expect(page.locator('.tray-block')).toHaveCount(9);
+  await expect(tray(page, 'Numerical linear algebra')).toContainText('1h');
+  await expect(tray(page, 'Workout')).toHaveAttribute('aria-label', /^Workout, Personal care, 1h, reusable/);
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await expect(page.locator('#type-list li')).toHaveCount(9);
+  await page.locator('#menu-dialog').getByRole('button', { name: 'Close' }).click();
+
+  await page.goto('about:blank');
+  await page.goto(link);
+  await expect(page.locator('#toast-text')).toHaveText('Everything in that link is already in your plan');
+  await expect(page.locator('#confirm-dialog')).toBeHidden();
+  await expect(page.locator('.tray-block')).toHaveCount(9);
+  expect(errors).toEqual([]);
+});

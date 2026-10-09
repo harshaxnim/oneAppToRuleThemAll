@@ -156,3 +156,30 @@ test('plans saved before version 3 lose only the untouched example blocks', () =
   // Version 3 plans are never filtered, even if names match.
   assert.equal(validateState(sample).blocks.length, sample.blocks.length);
 });
+
+test('merging adds new types and tray blocks, reuses types by name, and never duplicates', async () => {
+  const { mergePlan, encodeAddLink, decodeAddLink } = await import('../apps/blockplan/model.js');
+  const mine = starterState();
+  const incoming = validateState({ schemaVersion: 3, types: [
+    { id: 't1', name: 'Job hunt', color: '#2a9195' }, { id: 't2', name: 'deep WORK', color: '#6b7785' },
+  ], blocks: [
+    { id: 'b1', title: 'Apply', typeId: 't1', minutes: 60, scope: 'day', reusable: true },
+    { id: 'b2', title: 'Read papers', typeId: 't2', minutes: 90, scope: 'day', at: { date: '2026-10-09', start: 600 } },
+  ] }, { strict: true });
+  const first = mergePlan(mine, incoming);
+  assert.deepEqual(first.addedTypes.map(type => type.name), ['Job hunt']);
+  assert.equal(first.state.types.length, 6);
+  const deep = first.state.types.find(type => type.name === 'Deep work');
+  const read = first.state.blocks.find(block => block.title === 'Read papers');
+  assert.equal(read.typeId, deep.id, 'existing type reused by name');
+  assert.equal(read.at, null, 'added blocks wait in the tray');
+  assert.equal(first.state.blocks.find(block => block.title === 'Apply').reusable, true);
+  const again = mergePlan(first.state, incoming);
+  assert.equal(again.addedBlocks.length + again.addedTypes.length, 0, 'opening the same link twice adds nothing');
+
+  const hash = `#add=${encodeAddLink(incoming)}`;
+  assert.match(hash, /^#add=[A-Za-z0-9_-]+$/);
+  assert.deepEqual(decodeAddLink(hash).blocks.map(block => block.title), ['Apply', 'Read papers']);
+  assert.equal(decodeAddLink('#week'), null);
+  assert.throws(() => decodeAddLink('#add=bm90IGpzb24'), /damaged/);
+});

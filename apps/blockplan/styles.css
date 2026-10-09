@@ -228,6 +228,7 @@ dialog::backdrop { background: rgb(22 26 40 / 42%); }
   padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface);
 }
 .foot-left { display: flex; gap: 2px; }
+.foot-end { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .field { display: grid; gap: 6px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .field > span, legend { font-size: 13px; font-weight: 650; color: var(--muted); padding: 0; margin-bottom: 6px; }
 .field > span { margin-bottom: 0; }

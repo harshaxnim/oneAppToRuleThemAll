@@ -5,7 +5,7 @@ import {
   parseClock, clockInput, parseQuickTitle, snap, clamp, typeMap, trayBlocks, dayPlaced, weekPlaced, weekContextForDay,
   assignLanes, dayRange, totalsByType, nextFreeStart, nextFreeWeekOffset, fromWeekOffset, weekOffset, scatterKey,
   addType, updateType, deleteType, addBlock, updateBlock, deleteBlock, duplicateBlock, placeBlock, unplaceBlock,
-  exportData, parseImport,
+  exportData, parseImport, mergePlan, decodeAddLink,
 } from './model.js';
 import { PlanStore } from './store.js';
 import { attachDrag } from './drag.js';
@@ -163,6 +163,7 @@ function render() {
   $('#zoom-out').disabled = geometry.ppm * geometry.unit <= Math.min(fit, base) + 0.01;
   $('#zoom-in').disabled = geometry.ppm * geometry.unit >= max - 0.01;
   if ($('#menu-dialog').open) renderMenu();
+  if (pendingAdd) offerAddLink();
 }
 function renderStatus() {
   $('#status').textContent = store.status;
@@ -994,14 +995,54 @@ $('#import').addEventListener('change', async event => {
   if (!file) return;
   try {
     const next = parseImport(await file.text());
-    $('#confirm-title').textContent = 'Replace your plan?';
-    $('#confirm-text').textContent = `The backup has ${next.types.length} types and ${next.blocks.length} blocks. It replaces everything in your current plan. You can undo this right after.`;
+    $('#confirm-title').textContent = 'Import this plan?';
+    $('#confirm-text').textContent = `The file has ${next.types.length} types and ${next.blocks.length} blocks. Add them to your plan, or replace everything in your plan with them. You can undo either right after.`;
+    $('#confirm-alt').hidden = false;
+    $('#confirm-alt').textContent = 'Add to my plan';
+    $('#confirm-alt').onclick = () => { $('#confirm-dialog').close(); $('#menu-dialog').close(); addToPlan(next); };
     $('#confirm-ok').textContent = 'Replace';
     $('#confirm-ok').onclick = () => { $('#confirm-dialog').close(); $('#menu-dialog').close(); commit(next, 'Imported your plan'); };
     $('#confirm-dialog').showModal();
   } catch (error) { toast(error.message); }
 });
-$('#confirm-dialog').addEventListener('close', () => { $('#confirm-ok').textContent = 'Delete'; });
+$('#confirm-dialog').addEventListener('close', () => {
+  $('#confirm-ok').textContent = 'Delete';
+  $('#confirm-ok').classList.add('danger-bg');
+  $('#confirm-alt').hidden = true;
+  if (pendingAdd) clearAddLink();
+});
+function addToPlan(incoming) {
+  try {
+    const result = mergePlan(state(), incoming);
+    const blocks = result.addedBlocks.length, typesAdded = result.addedTypes.length;
+    if (!blocks && !typesAdded) { toast('Everything in it is already in your plan'); return; }
+    const parts = [blocks && `${blocks} block${blocks === 1 ? '' : 's'}`, typesAdded && `${typesAdded} type${typesAdded === 1 ? '' : 's'}`].filter(Boolean);
+    if (result.addedBlocks.some(block => block.scope !== view)) setView(result.addedBlocks[0].scope);
+    commit(result.state, `Added ${parts.join(' and ')}`);
+  } catch (error) { toast(error.message); }
+}
+// “Add to plan” links (#add=…): confirm, then merge into whichever plan is open.
+let pendingAdd = null;
+try { pendingAdd = decodeAddLink(location.hash); } catch (error) { setTimeout(() => toast(error.message), 0); clearAddLink(); }
+function clearAddLink() {
+  pendingAdd = null;
+  // window.history: `history` in this module is the undo stack.
+  if (location.hash.startsWith('#add=')) window.history.replaceState(null, '', location.pathname + location.search);
+}
+function offerAddLink() {
+  if (!pendingAdd || !store.ready || document.querySelector('dialog[open]')) return;
+  const incoming = pendingAdd;
+  const preview = mergePlan(state(), incoming);
+  if (!preview.addedBlocks.length && !preview.addedTypes.length) { clearAddLink(); toast('Everything in that link is already in your plan'); return; }
+  const names = preview.addedTypes.map(type => type.name);
+  const blocks = preview.addedBlocks.length;
+  $('#confirm-title').textContent = 'Add to your plan?';
+  $('#confirm-text').textContent = `${names.length ? `Adds ${names.length} type${names.length === 1 ? '' : 's'} (${names.join(', ')}) and ` : 'Adds '}${blocks} block${blocks === 1 ? '' : 's'} to your tray. Types you already have are reused.`;
+  $('#confirm-ok').textContent = 'Add';
+  $('#confirm-ok').classList.remove('danger-bg');
+  $('#confirm-ok').onclick = () => { clearAddLink(); $('#confirm-dialog').close(); addToPlan(incoming); };
+  $('#confirm-dialog').showModal();
+}
 
 // ---------- Navigation and global controls ----------
 function setView(next) {
