@@ -2,11 +2,14 @@ import { signIn, signOut, onUserChanged, getAppRegistry, appInfo } from './lib/p
 import { APP_STATUSES, resolveAppInfo, TEMPLATE_REPOSITORY } from './lib/app-info.js';
 import { discoverTemplateApps } from './lib/github-discovery.js';
 import { checkAppPage } from './lib/page-status.js';
+import { mergeDirectory, parsePublishedCatalogue } from './lib/catalogue.js';
 
 const $ = id => document.getElementById(id);
 const labels = { planning: 'Planned', development: 'In development', live: 'Live', paused: 'Paused', archived: 'Archived' };
 let user = null;
 let apps = [];
+let records = [];
+let declared = [];
 let loaded = false;
 let filter = 'all';
 let editing = false;
@@ -97,10 +100,10 @@ function render() {
     const repo = link(app.repository, app.repositoryUrl); if (repo) meta.append(repo);
     const bottom = document.createElement('div'); bottom.className = 'card-bottom';
     const date = document.createElement('span'); date.className = 'card-date';
-    const updated = typeof app.updatedAt?.toDate === 'function' ? app.updatedAt.toDate() : null; date.textContent = updated ? `Updated ${updated.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : 'New to the ecosystem';
+    const updated = typeof app.updatedAt?.toDate === 'function' ? app.updatedAt.toDate() : null; date.textContent = updated ? `Updated ${updated.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : app.fallback ? 'Hosted on this site' : 'New to the ecosystem';
     const pageResult = document.createElement('span'); pageResult.className = 'page-result'; pageResult.textContent = app.status === 'archived' ? 'Archived' : 'Checking page…';
     const actions = document.createElement('div'); actions.className = 'card-actions';
-    if (user?.uid === app.ownerUid) {
+    if (!app.fallback && user?.uid === app.ownerUid) {
       const edit = document.createElement('button'); edit.className = 'manage-button'; edit.type = 'button'; edit.textContent = 'Manage'; edit.setAttribute('aria-label', `Manage ${app.name}`); edit.addEventListener('click', () => openForm(app)); actions.append(edit);
     }
     const visit = link('Open app', app.url, 'app-link'); if (visit) { visit.append(icon('arrow')); actions.append(visit); }
@@ -177,10 +180,19 @@ $('sync-github').addEventListener('click', async () => {
   finally { $('sync-github').disabled = false; }
 });
 
+function refresh() { apps = mergeDirectory(records, declared); schedulePageChecks(); render(); }
+// Apps declared in this repository show even before (or without) their
+// Firestore record, so the directory never hides an app this site hosts.
+fetch('./app-catalog.json').then(response => response.ok ? response.json() : null).then(payload => {
+  if (!payload) return;
+  declared = parsePublishedCatalogue(payload, appInfo.repository);
+  if (loaded) refresh();
+}).catch(error => console.warn('Declared app catalogue unavailable:', error.message));
 try {
   registry = getAppRegistry();
-  registry.subscribeApps(records => { apps = records; loaded = true; schedulePageChecks(); render(); }, error => {
+  registry.subscribeApps(rows => { records = rows; loaded = true; refresh(); }, error => {
     console.error('Directory read failed:', error.code || error.message);
+    if (declared.length) { loaded = true; refresh(); message('Showing the apps hosted on this site. The full directory couldn’t load right now.'); return; }
     $('app-list').setAttribute('aria-busy', 'false');
     $('app-list').replaceChildren(empty('The directory is taking a moment.', 'We couldn’t load the latest apps. Please try again soon.'));
   });

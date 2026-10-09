@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveAppInfo } from '../lib/app-info.js';
-import { resolveCatalogueApps, parsePublishedCatalogue, publicAppInfo } from '../lib/catalogue.js';
+import { resolveCatalogueApps, parsePublishedCatalogue, publicAppInfo, mergeDirectory } from '../lib/catalogue.js';
 import { HOSTED_APPS } from '../config/catalogue-apps.js';
 import { validateCatalogue, createCatalogueRegistrar } from '../scripts/register-catalogue.js';
 import { firebaseConfig } from '../config/firebase-config.js';
@@ -37,4 +37,17 @@ test('missing publisher auth and invalid metadata fail before any network write'
   payload.apps[0].themeColor = 'unsafe';
   await assert.rejects(() => registrar.register(payload, { refreshToken: 'test-only' }));
   assert.equal(requests, 0);
+});
+test('declared apps fill in for missing directory records without replacing real ones', () => {
+  const primary = resolveAppInfo({ repository: 'harshaxnim/websiteSetup' });
+  const declared = resolveCatalogueApps(primary, HOSTED_APPS);
+  const records = [{ id: 'learning-tracker', appId: 'learning-tracker', name: 'Owner-edited name', ownerUid: 'owner' }];
+  const merged = mergeDirectory(records, declared);
+  assert.equal(merged.length, declared.length);
+  assert.equal(merged.find(app => app.appId === 'learning-tracker').name, 'Owner-edited name');
+  assert.equal(merged.find(app => app.appId === 'learning-tracker').fallback, undefined);
+  const blockplan = merged.find(app => app.appId === 'blockplan');
+  assert.equal(blockplan.fallback, true);
+  assert.equal(blockplan.ownerUid, undefined, 'fallback cards carry no owner and cannot be managed');
+  assert.deepEqual(mergeDirectory([], []), []);
 });
